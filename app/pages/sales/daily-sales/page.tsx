@@ -17,7 +17,7 @@ export default function DailySales() {
   useEffect(() => {
     async function fetchDailySales() {
       try {
-        const response = await fetch("/api/sales/get-daily-sales");
+        const response = await fetch("/api/sales/get-daily-sales", { cache: 'no-store'});
         if (!response.ok) throw new Error("Network response was not ok");
         const data = await response.json();
         setDailySales(data);

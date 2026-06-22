@@ -3,6 +3,8 @@ import { db } from "@/app/db";
 import { expenses } from "@/app/db/schema";
 import { and, gte, lte } from "drizzle-orm";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(){
     try{
         const startOfToday = new Date();

@@ -17,7 +17,7 @@ export default function DailyExpenses(){
     useEffect(() => {
         async function fetchDailyExpenses() {
             try{
-                const response = await fetch("/api/expenses/get-weekly-expenses");
+                const response = await fetch("/api/expenses/get-monthly-expenses", { cache: 'no-store'});
                 if(!response.ok) throw new Error("Network response was not ok");
                 const data = await response.json();
                 setMonethlyExpenses(data);

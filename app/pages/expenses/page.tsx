@@ -86,7 +86,7 @@ export default function ExpensesPage() {
 
     return (
         <main className="min-h-screen bg-slate-50/50 dark:bg-slate-900 py-8 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-7xl mx-auto space-y-8">
+              <div className="max-w-7xl mx-auto space-y-8">
                 <ExpensesNavigation />
                 
                 <div className="p-6 max-w-lg mx-auto">

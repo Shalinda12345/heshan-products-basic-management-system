@@ -17,7 +17,7 @@ export default function WeeklySales() {
   useEffect(() => {
     async function fetchWeeklySales() {
       try {
-        const response = await fetch("/api/sales/get-weekly-sales");
+        const response = await fetch("/api/sales/get-weekly-sales", { cache: 'no-store'});
         if (!response.ok) throw new Error("Network response was not ok");
         const data = await response.json();
         setWeeklySales(data);

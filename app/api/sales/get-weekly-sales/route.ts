@@ -3,6 +3,8 @@ import { db } from "@/app/db";
 import { sales } from "@/app/db/schema";
 import { and, gte, lte, desc } from "drizzle-orm"; 
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
     try {
         const now = new Date();
