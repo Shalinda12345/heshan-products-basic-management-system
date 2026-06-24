@@ -23,7 +23,6 @@ export default function SalesPage() {
   const [quantityPerProduct, setQuantityPerProduct] = useState(0);
   const [sellingPricePerProduct, setSellingPricePerProduct] = useState(0);
   const [productName, setProductName] = useState("");
-  const [actionButton, setActionButton] = useState<React.ReactNode>(null);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [customerName, setCustomerName] = useState("");
@@ -97,7 +96,6 @@ export default function SalesPage() {
     setSaleItems((currentItems) => [...currentItems, newItem]);
     setProductName("");
     setQuantityPerProduct(0);
-    setActionButton(null);
     setSellingPricePerProduct(0);
     setIsPopupOpen(false);
   };

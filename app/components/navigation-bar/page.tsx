@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 
 export default function Navbar() {
@@ -14,16 +15,16 @@ export default function Navbar() {
             <span className="text-lg font-bold">B</span>
           </div>
           <div>
-            <a href="/" className="text-2xl font-semibold tracking-tight text-zinc-900 transition hover:text-sky-600 dark:text-white dark:hover:text-sky-400">Basic Manager</a>
+            <Link href="/" className="text-2xl font-semibold tracking-tight text-zinc-900 transition hover:text-sky-600 dark:text-white dark:hover:text-sky-400">Basic Manager</Link>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">Dashboard</p>
           </div>
         </div>
 
         <div className="hidden md:flex items-center gap-4 text-lg font-semibold text-zinc-600 dark:text-zinc-300">
-          <a href="/" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Home</a>
-          <a href="/pages/sales" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Sales</a>
-          <a href="/pages/expenses" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Expenses</a>
-          <a href="/pages/stock" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Stock</a>
+          <Link href="/" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Home</Link>
+          <Link href="/pages/sales" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Sales</Link>
+          <Link href="/pages/expenses" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Expenses</Link>
+          <Link href="/pages/stock" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Stock</Link>
         </div>
 
         {/* 2. MOBILE HAMBURGER BUTTON: Scale up the button and icon slightly */}
@@ -55,10 +56,10 @@ export default function Navbar() {
       {isOpen && (
         <div className="md:hidden border-t border-zinc-200/80 bg-white/95 backdrop-blur-lg dark:border-slate-800/80 dark:bg-slate-950/95" id="mobile-menu">
           <div className="space-y-2 px-4 pt-4 pb-5 font-sans text-lg font-medium text-zinc-600 dark:text-zinc-300">
-            <a href="/" className="block rounded-3xl bg-zinc-100/90 px-4 py-3 transition duration-300 hover:bg-zinc-200/80 hover:text-sky-700 dark:bg-slate-900/80 dark:hover:bg-slate-800/90 dark:hover:text-sky-300">Home</a>
-            <a href="/pages/sales" className="block rounded-3xl bg-zinc-100/90 px-4 py-3 transition duration-300 hover:bg-zinc-200/80 hover:text-sky-700 dark:bg-slate-900/80 dark:hover:bg-slate-800/90 dark:hover:text-sky-300">Sales</a>
-            <a href="/pages/expenses" className="block rounded-3xl bg-zinc-100/90 px-4 py-3 transition duration-300 hover:bg-zinc-200/80 hover:text-sky-700 dark:bg-slate-900/80 dark:hover:bg-slate-800/90 dark:hover:text-sky-300">Expenses</a>
-            <a href="/pages/stock" className="block rounded-3xl bg-zinc-100/90 px-4 py-3 transition duration-300 hover:bg-zinc-200/80 hover:text-sky-700 dark:bg-slate-900/80 dark:hover:bg-slate-800/90 dark:hover:text-sky-300">Stock</a>
+            <Link href="/" className="block rounded-3xl bg-zinc-100/90 px-4 py-3 transition duration-300 hover:bg-zinc-200/80 hover:text-sky-700 dark:bg-slate-900/80 dark:hover:bg-slate-800/90 dark:hover:text-sky-300">Home</Link>
+            <Link href="/pages/sales" className="block rounded-3xl bg-zinc-100/90 px-4 py-3 transition duration-300 hover:bg-zinc-200/80 hover:text-sky-700 dark:bg-slate-900/80 dark:hover:bg-slate-800/90 dark:hover:text-sky-300">Sales</Link>
+            <Link href="/pages/expenses" className="block rounded-3xl bg-zinc-100/90 px-4 py-3 transition duration-300 hover:bg-zinc-200/80 hover:text-sky-700 dark:bg-slate-900/80 dark:hover:bg-slate-800/90 dark:hover:text-sky-300">Expenses</Link>
+            <Link href="/pages/stock" className="block rounded-3xl bg-zinc-100/90 px-4 py-3 transition duration-300 hover:bg-zinc-200/80 hover:text-sky-700 dark:bg-slate-900/80 dark:hover:bg-slate-800/90 dark:hover:text-sky-300">Stock</Link>
           </div>
         </div>
       )}

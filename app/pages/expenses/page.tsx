@@ -64,7 +64,6 @@ export default function ExpensesPage() {
 
     // Fetch today's expenses
     const fetchRecentExpenses = async () => {
-        setLoadingRecent(true);
         try {
             const response = await fetch("/api/expenses/get-daily-expenses", { cache: 'no-store' });
             if (!response.ok) throw new Error("Network response was not ok");
@@ -77,8 +76,13 @@ export default function ExpensesPage() {
         }
     };
 
+    // Safely execute initial data loading inside a local async handler 
+    // to satisfy strict custom react-hooks linters
     useEffect(() => {
-        fetchRecentExpenses();
+        const initializeLedger = async () => {
+            await fetchRecentExpenses();
+        };
+        initializeLedger();
     }, []);
 
     // Check if the current expense requires a quantity breakdown
@@ -95,6 +99,7 @@ export default function ExpensesPage() {
         }
 
         setIsSubmitting(true);
+        setLoadingRecent(true); // Explicitly set loading state before background refetch
 
         try {
             const response = await fetch("/api/expenses/save-expenses", {
@@ -123,10 +128,12 @@ export default function ExpensesPage() {
                 setAmount(0);
             } else {
                 showAlert('error', 'Save Failed', result.message || 'Failed to save data to the database.');
+                setLoadingRecent(false);
             }
         } catch (error) {
             console.error("Network connection error saving expense:", error);
             showAlert('error', 'Network Error', 'A network connection error occurred. Please try again.');
+            setLoadingRecent(false);
         } finally {
             setIsSubmitting(false);
         }
@@ -308,7 +315,7 @@ export default function ExpensesPage() {
                         {/* Summary Total Widget */}
                         <div className="bg-gradient-to-r from-blue-50/50 to-indigo-50/40 dark:from-slate-800 dark:to-indigo-950/20 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 flex items-center justify-between gap-4 shadow-sm">
                             <div>
-                                <h3 className="text-slate-800 dark:text-white font-bold text-lg">Today's Expenses</h3>
+                                <h3 className="text-slate-800 dark:text-white font-bold text-lg">Today&apos;s Expenses</h3>
                                 <p className="text-slate-400 text-xs mt-1">Live running ledger of expenditures recorded today.</p>
                             </div>
                             <div className="text-right">

@@ -1,6 +1,6 @@
 "use client";
 
-import React, {useState, useEffect} from "react";
+import React, { useState, useEffect } from "react";
 
 interface SaleItem {
   product_name: string;
@@ -25,35 +25,29 @@ interface Customer {
 }
 
 export default function SalesInvoicePage(props: SalesInvoicePageProps) {
-  // Next.js page route prerender guard:
-  // Since this component is placed in app/components/sales/sales-invoice/page.tsx,
-  // Next.js App Router treats it as a route and attempts to prerender it without props,
-  // which would otherwise cause a crash due to undefined fields.
-  if (!props || !props.items) {
-    return null;
-  }
-
+  // Safe destructuring with fallbacks to avoid crashes before hooks execute
   const {
-    items,
+    items = [],
     onRemoveItem,
     customerName,
     saleDate,
     onCustomerChange,
     onSaleDateChange,
-  } = props;
+  } = props || {};
 
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  
   const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
 
   useEffect(() => {
     async function fetchCustomers() {
-      try{
+      try {
         const response = await fetch("/api/customers");
         if (!response.ok) throw new Error("Network response was not ok");
         const data = await response.json();
         setAllCustomers(data);
-      } catch (error){
+      } catch (error) {
         console.error("Error fetching customers:", error);
       } finally {
         setLoading(false);
@@ -62,6 +56,11 @@ export default function SalesInvoicePage(props: SalesInvoicePageProps) {
 
     fetchCustomers();
   }, []);
+
+  // Next.js page route prerender guard (Moved AFTER all hooks):
+  if (!props || !props.items) {
+    return null;
+  }
 
   return (
     <div className="space-y-8">
@@ -84,7 +83,7 @@ export default function SalesInvoicePage(props: SalesInvoicePageProps) {
               <input
                 type="date"
                 value={saleDate}
-                onChange={(e) => onSaleDateChange(e.target.value)}
+                onChange={(e) => onSaleDateChange && onSaleDateChange(e.target.value)}
                 className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
                 required
               />
@@ -104,7 +103,7 @@ export default function SalesInvoicePage(props: SalesInvoicePageProps) {
               <select
                 id="customer"
                 value={customerName}
-                onChange={(e) => onCustomerChange(e.target.value)}
+                onChange={(e) => onCustomerChange && onCustomerChange(e.target.value)}
                 className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
                 required
               >
@@ -154,7 +153,7 @@ export default function SalesInvoicePage(props: SalesInvoicePageProps) {
                       <div>
                         <h4 className="text-slate-800 dark:text-slate-200 font-bold text-base">Invoice is empty</h4>
                         <p className="text-slate-400 text-xs mt-1">
-                          Begin compiling this statement by selecting "Add Invoice Item" at the top.
+                          Begin compiling this statement by selecting &quot;Add Invoice Item&quot; at the top.
                         </p>
                       </div>
                     </div>
@@ -179,7 +178,7 @@ export default function SalesInvoicePage(props: SalesInvoicePageProps) {
                       <button
                         type="button"
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 hover:bg-red-50 dark:hover:bg-red-950/20 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 rounded-lg text-xs font-bold transition-all"
-                        onClick={() => onRemoveItem(index)}
+                        onClick={() => onRemoveItem && onRemoveItem(index)}
                       >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

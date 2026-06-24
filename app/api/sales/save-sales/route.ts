@@ -12,12 +12,14 @@ export async function POST(request: Request){
             message: "Invoice saved successfully!",
             sale_id: result.sale_id
         }, { status: 201 });
-    } catch (error: any){
-        console.error("API Error saving sale:", error);
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        console.error("Failed to fetch monthly expenses: ", errorMessage);
+        
         return NextResponse.json(
-            { success: false, message: error.message || "Internal Server Error"},
+            { error: "Internal Server Error" },
             { status: 500 }
-        )
+        );
     }
 }
 

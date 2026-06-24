@@ -92,7 +92,7 @@ export default function DailySales() {
               📊
             </div>
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Today's Revenue</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Today&apos;s Revenue</p>
               <p className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1">
                 Rs.{totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </p>

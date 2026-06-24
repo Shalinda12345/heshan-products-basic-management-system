@@ -14,7 +14,7 @@ if (!connectionString) {
   );
 }
 
-const connection = globalForDb.conn ?? mysql.createPool(connectionString as any);
+const connection = globalForDb.conn ?? mysql.createPool(connectionString as string);
 
 if (process.env.NODE_ENV !== 'production') globalForDb.conn = connection;
 
