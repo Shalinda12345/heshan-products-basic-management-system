@@ -23,7 +23,7 @@ export default function Navbar() {
           <a href="/" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Home</a>
           <a href="/pages/sales" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Sales</a>
           <a href="/pages/expenses" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Expenses</a>
-          <a href="/pages/stock" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-50₀ dark:hover:bg-slate-9₀₀ dark:hover:text-sky-3₀₀">Stock</a>
+          <a href="/pages/stock" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Stock</a>
         </div>
 
         {/* 2. MOBILE HAMBURGER BUTTON: Scale up the button and icon slightly */}
