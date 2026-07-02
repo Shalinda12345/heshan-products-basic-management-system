@@ -50,4 +50,11 @@ export const expenses = mysqlTable('expenses', {
     per_expense_amount: double('per_expense_amount', { precision: 10, scale: 2 }).notNull(),
     total: double('total', { precision: 10, scale: 2 }).notNull(),
     expense_date: date('expense_date').notNull(),
-})
+});
+
+export const stocks = mysqlTable('stocks', {
+    stock_id: serial('stock_id').primaryKey(),
+    product_id: int('product_id').notNull().unique(),
+    quantity: double('quantity', { precision: 10, scale: 2 }).notNull().default(0),
+    updated_at: timestamp('updated_at').defaultNow().onUpdateNow(),
+});
