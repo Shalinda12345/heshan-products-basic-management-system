@@ -1,6 +1,5 @@
 runtime:
-  language: node
-  version: "20"
+  image: node:20
 
 build:
   commands:
