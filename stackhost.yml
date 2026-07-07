@@ -1,4 +1,6 @@
-version: 1
+runtime:
+  language: node
+  version: "20"
 
 build:
   commands:
@@ -7,6 +9,3 @@ build:
 
 run:
   command: npm start
-
-env:
-  NODE_ENV: production
