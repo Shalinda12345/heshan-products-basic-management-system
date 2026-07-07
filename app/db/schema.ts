@@ -1,10 +1,10 @@
 import { mysqlTable, serial, varchar, timestamp, double, int, date } from 'drizzle-orm/mysql-core';
 
 export const users = mysqlTable('users', {
-  id: serial('id').primaryKey(),
-  name: varchar('name', { length: 255 }).notNull(),
-  email: varchar('email', { length: 255 }).notNull(),
-  createdAt: timestamp('createdAt').defaultNow(),
+    id: serial('id').primaryKey(),
+    name: varchar('name', { length: 255 }).notNull(),
+    email: varchar('email', { length: 255 }).notNull(),
+    createdAt: timestamp('createdAt').defaultNow(),
 });
 
 export const products = mysqlTable('products', {
@@ -15,7 +15,7 @@ export const products = mysqlTable('products', {
 
 export const customers = mysqlTable('customers', {
     customer_id: serial('customer_id').primaryKey(),
-    customer_name: varchar('customer_name', { length: 255}).notNull(),
+    customer_name: varchar('customer_name', { length: 255 }).notNull(),
 })
 
 
@@ -25,7 +25,7 @@ export const sales = mysqlTable('sales', {
     grand_total: double('grand_total', { precision: 10, scale: 2 }).notNull(),
     sale_date: date('sale_date').notNull(),
 })
-    
+
 
 export const sale_items = mysqlTable('sale_items', {
     sale_detail_id: serial('sale_detail_id').notNull().primaryKey(),
@@ -39,13 +39,13 @@ export const sale_items = mysqlTable('sale_items', {
 
 export const expenses_list = mysqlTable('expenses_list', {
     expense_id: serial('expense_id').notNull().primaryKey(),
-    expense_name: varchar('expense_name', {length:255}).notNull(),
+    expense_name: varchar('expense_name', { length: 255 }).notNull(),
 })
 
 
 export const expenses = mysqlTable('expenses', {
     expense_item_id: serial('expense_item_id').notNull().primaryKey(),
-    expense_name: varchar('expense_name', {length:255}).notNull(),
+    expense_name: varchar('expense_name', { length: 255 }).notNull(),
     quantity: double('quantity', { precision: 10, scale: 2 }),
     per_expense_amount: double('per_expense_amount', { precision: 10, scale: 2 }).notNull(),
     total: double('total', { precision: 10, scale: 2 }).notNull(),
@@ -57,4 +57,13 @@ export const stocks = mysqlTable('stocks', {
     product_id: int('product_id').notNull().unique(),
     quantity: double('quantity', { precision: 10, scale: 2 }).notNull().default(0),
     updated_at: timestamp('updated_at').defaultNow().onUpdateNow(),
-});
+});
+
+
+export const employees = mysqlTable('employees', {
+    employee_id: serial('employee_id').primaryKey(),
+    employee_name: varchar('employee_name', { length: 255 }).notNull(),
+    employee_address: varchar('employee_address', { length: 255 }).notNull(),
+    employee_contact_no: varchar('employee_contact_no', { length: 255 }).notNull(),
+    maritial_status: varchar('maritial_status', { length: 255 }).notNull(),
+})

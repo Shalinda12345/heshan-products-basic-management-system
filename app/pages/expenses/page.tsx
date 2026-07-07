@@ -18,6 +18,14 @@ interface Expense_Item_List {
     expense_name: string;
 }
 
+interface Employees {
+    employee_id: number;
+    employee_name: string;
+    employee_address: string;
+    employee_contact_no: string;
+    maritial_status: string;
+}
+
 export default function ExpensesPage() {
     const [expenseName, setExpenseName] = useState("");
     const [allExpenseItems, setAllExpenseItems] = useState<Expense_Item_List[]>([]);
@@ -26,6 +34,8 @@ export default function ExpensesPage() {
     const [quantityPerProduct, setQuantityPerProduct] = useState(0);
     const [amount, setAmount] = useState(0);
     const [expenseDate, setExpenseDate] = useState("");
+    const [employeeName, setEmployeeName] = useState("");
+    const [allEmployees, setAllEmployees] = useState([]);
 
     // For right side recent list
     const [recentExpenses, setRecentExpenses] = useState<Expense[]>([]);
@@ -62,6 +72,19 @@ export default function ExpensesPage() {
         fetchExpenseItemsList();
     }, []);
 
+    const fetchEmployeeList = async () => {
+        try {
+            const response = await fetch("/api/employees");
+            if (!response.ok) throw new Error("Network response was not ok");
+            const data = await response.json();
+            setAllEmployees(data.data);
+        } catch (error) {
+            console.error("Error fetching employee list:", error);
+        } finally {
+            setLoadingDropdown(false);
+        }
+    };
+
     // Fetch today's expenses
     const fetchRecentExpenses = async () => {
         try {
@@ -83,6 +106,10 @@ export default function ExpensesPage() {
             await fetchRecentExpenses();
         };
         initializeLedger();
+    }, []);
+
+    useEffect(() => {
+        fetchEmployeeList();
     }, []);
 
     // Check if the current expense requires a quantity breakdown
@@ -258,7 +285,7 @@ export default function ExpensesPage() {
                                     </div>
                                 </div>
                             ) : (
-                                expenseName !== "" && (
+                                expenseName !== "" && expenseName !== "Salary" && (
                                     <div>
                                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
                                             Expense Amount (Rs.)
@@ -276,6 +303,39 @@ export default function ExpensesPage() {
                                     </div>
                                 )
                             )}
+
+                            {expenseName === "Salary" || expenseName === "Salary Advance" || expenseName === "Salary Loan" ? (
+                                <div>
+                                    <select
+                                        value={employeeName}
+                                        onChange={(e) => {
+                                            setEmployeeName(e.target.value);
+                                        }}
+                                        className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
+                                        required
+                                    >
+                                        <option value="">Choose Employee</option>
+                                        {allEmployees.map((employee: Employees) => (
+                                            <option key={employee.employee_id} value={employee.employee_name}>
+                                                {employee.employee_name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
+                                        Expense Amount (Rs.)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={amount > 0 ? amount : ''}
+                                        onChange={(e) => setAmount(Number(e.target.value))}
+                                        className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
+                                        placeholder="0.00"
+                                        min="0.01"
+                                        required
+                                    />
+                                </div>
+                            ) : (<></>)}
 
                             <div className="pt-2">
                                 {expenseName === "" ? (
