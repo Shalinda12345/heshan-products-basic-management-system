@@ -1,13 +1,14 @@
 @import "tailwindcss";
 
+/* ─── Dark Mode Enforced (always on) ────────────────────────────────────────── */
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --primary: #3b82f6;
-  --primary-light: #eff6ff;
+  --background: #060d1a;
+  --foreground: #f1f5f9;
+  --primary: #6366f1;
+  --primary-light: #0c1929;
   --success: #10b981;
   --danger: #ef4444;
-  --border: #e2e8f0;
+  --border: #1e293b;
 }
 
 @theme inline {
@@ -17,21 +18,12 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0f172a;
-    --foreground: #f1f5f9;
-    --border: #1e293b;
-    --primary-light: #0c1929;
-  }
-}
-
 * {
   @apply transition-colors duration-200;
 }
 
-body {
-  background: var(--background);
+html, body {
+  background-color: #060d1a;
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
@@ -42,4 +34,62 @@ body {
 
 main {
   @apply min-h-screen;
+  background-color: #060d1a;
 }
+
+/* ─── Shared dark page layout utilities ──────────────────────────────────────── */
+
+/* Deep dark page background — matches the home dashboard */
+.page-wrapper {
+  min-height: 100vh;
+  background: #060d1a;
+  position: relative;
+}
+
+/* Ambient indigo radial glow — fixed behind all content */
+.page-glow {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(99, 102, 241, 0.1) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* Wraps actual page content above the glow */
+.page-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* Large glassmorphism card — matches home page ChartCard */
+.glass-card {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.13);
+  backdrop-filter: blur(12px);
+}
+
+/* Smaller glass widget — for summary boxes, search bars, etc. */
+.glass-card-sm {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(99, 102, 241, 0.1);
+  backdrop-filter: blur(8px);
+}
+
+/* Dark input fields matching home page style */
+.dark-input {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  color: #f1f5f9;
+}
+
+.dark-input:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.5);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+/* Page-level section divider */
+.section-divider {
+  border-bottom: 1px solid rgba(99, 102, 241, 0.12);
+}
+

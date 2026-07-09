@@ -74,19 +74,20 @@ export default function MonthlySales() {
   const totalRevenue = filteredSales.reduce((sum, s) => sum + Number(s.grand_total), 0);
 
   return (
-    <main className="min-h-screen bg-slate-50/50 dark:bg-slate-900">
+    <main className="page-wrapper">
+      <div className="page-glow" />
       <SalesNavigation />
-      <div className="max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
+      <div className="page-content max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
 
         {/* Header Block */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-slate-200 dark:border-slate-800 pb-6 gap-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between section-divider pb-6 gap-4">
           <div>
             <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Monthly Fiscal Audits</h1>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">High-level visibility into cumulative sales metrics for the current calendar period.</p>
           </div>
           
           {/* Executive Summary Widget */}
-          <div className="bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/60 rounded-2xl p-5 flex items-center gap-4 shadow-sm min-w-[280px]">
+          <div className="glass-card-sm rounded-2xl p-5 flex items-center gap-4 min-w-[280px]">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-2xl">
               💼
             </div>
@@ -100,7 +101,7 @@ export default function MonthlySales() {
         </div>
 
         {/* Search Bar / Filter Panel */}
-        <div className="flex items-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4 shadow-sm">
+          <div className="glass-card-sm rounded-xl p-4 flex items-center">
           <div className="relative w-full max-w-md">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -112,7 +113,7 @@ export default function MonthlySales() {
               placeholder="Search by customer name or ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 text-sm focus:outline-none focus:border-blue-500 transition-all font-medium"
+              className="w-full pl-10 pr-4 py-2 border border-slate-700 rounded-xl bg-slate-900/50 text-white text-sm focus:outline-none focus:border-blue-500 transition-all font-medium"
             />
           </div>
           {searchQuery && (
@@ -126,7 +127,7 @@ export default function MonthlySales() {
         </div>
 
         {/* Table/Data Area */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded-2xl shadow-xl shadow-slate-200/20 dark:shadow-none overflow-hidden">
+          <div className="glass-card rounded-2xl overflow-hidden">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
               <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
@@ -142,7 +143,7 @@ export default function MonthlySales() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 uppercase text-xs font-bold tracking-wider border-b border-slate-200 dark:border-slate-800">
+                  <tr className="bg-slate-950/40 text-slate-400 uppercase text-xs font-bold tracking-wider border-b border-slate-800">
                     <th className="px-6 py-4 w-12"></th>
                     <th className="px-6 py-4">Transaction ID</th>
                     <th className="px-6 py-4">Account/Customer</th>
@@ -150,14 +151,14 @@ export default function MonthlySales() {
                     <th className="px-6 py-4 text-right">Settled Amount</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                <tbody className="divide-y divide-slate-800 text-slate-300">
                   {filteredSales.map((sale) => {
                     const isExpanded = expandedSaleId === sale.sale_id;
                     return (
                       <React.Fragment key={sale.sale_id}>
                         <tr 
                           onClick={() => toggleExpandSale(sale.sale_id)}
-                          className="hover:bg-slate-50/50 dark:hover:bg-slate-700/40 cursor-pointer transition-colors duration-150"
+                          className="hover:bg-slate-800/40 cursor-pointer transition-colors duration-150"
                         >
                           <td className="px-6 py-4 text-center">
                             <span className={`inline-block transform transition-transform duration-200 text-slate-400 ${isExpanded ? "rotate-90 text-blue-500" : ""}`}>
@@ -165,7 +166,7 @@ export default function MonthlySales() {
                             </span>
                           </td>
                           <td className="px-6 py-4 font-mono text-xs text-slate-400 font-semibold">#M-SAL-{sale.sale_id}</td>
-                          <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">{sale.customer_name}</td>
+                          <td className="px-6 py-4 font-bold text-white">{sale.customer_name}</td>
                           <td className="px-6 py-4 text-slate-500 dark:text-slate-400">
                             {new Date(sale.sale_date).toLocaleDateString(undefined, { dateStyle: 'medium' })}
                           </td>
@@ -174,10 +175,10 @@ export default function MonthlySales() {
                           </td>
                         </tr>
                         {isExpanded && (
-                          <tr className="bg-slate-50/30 dark:bg-slate-900/10">
-                            <td colSpan={5} className="px-8 py-4 border-t border-b border-slate-100 dark:border-slate-800/80">
-                              <div className="bg-slate-50/70 dark:bg-slate-900/40 rounded-xl p-5 border border-slate-200/50 dark:border-slate-800 space-y-4">
-                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Transaction Breakdown</h4>
+                          <tr className="bg-slate-950/10">
+                            <td colSpan={5} className="px-8 py-4 border-t border-b border-slate-800/80">
+                              <div className="bg-slate-950/20 rounded-xl p-5 border border-slate-800 space-y-4">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Transaction Breakdown</h4>
                                 {loadingItemsId === sale.sale_id ? (
                                   <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500 py-4 text-sm font-medium">
                                     <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
@@ -188,7 +189,7 @@ export default function MonthlySales() {
                                 ) : (
                                   <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
                                     <table className="w-full text-xs text-left">
-                                      <thead className="bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider border-b border-slate-200 dark:border-slate-800">
+                                      <thead className="bg-slate-900 text-slate-400 uppercase font-bold tracking-wider border-b border-slate-800">
                                         <tr>
                                           <th className="py-2.5 px-4">Item Name</th>
                                           <th className="py-2.5 px-4 text-right">Quantity</th>
@@ -196,13 +197,13 @@ export default function MonthlySales() {
                                           <th className="py-2.5 px-4 text-right">Subtotal</th>
                                         </tr>
                                       </thead>
-                                      <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
+                                      <tbody className="divide-y divide-slate-800 font-medium">
                                         {saleItems[sale.sale_id].map((item) => (
-                                          <tr key={item.sale_detail_id} className="text-slate-700 dark:text-slate-300">
-                                            <td className="py-2.5 px-4 font-semibold text-slate-900 dark:text-white">{item.product_name}</td>
+                                          <tr key={item.sale_detail_id} className="text-slate-300">
+                                            <td className="py-2.5 px-4 font-semibold text-white">{item.product_name}</td>
                                             <td className="py-2.5 px-4 text-right font-mono">{item.quantity}</td>
                                             <td className="py-2.5 px-4 text-right font-mono">Rs.{item.selling_price.toFixed(2)}</td>
-                                            <td className="py-2.5 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">Rs.{item.total.toFixed(2)}</td>
+                                            <td className="py-2.5 px-4 text-right font-mono font-bold text-white">Rs.{item.total.toFixed(2)}</td>
                                           </tr>
                                         ))}
                                       </tbody>

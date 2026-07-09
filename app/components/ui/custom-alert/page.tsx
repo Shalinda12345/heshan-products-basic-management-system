@@ -80,10 +80,10 @@ export default function CustomAlert({ isOpen, variant, title, message, onClose }
             />
 
             {/* Card */}
-            <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-sm mx-auto overflow-visible animate-in zoom-in-95 duration-200">
+            <div className="relative bg-slate-900 border border-slate-700/60 rounded-3xl shadow-2xl shadow-black/60 w-full max-w-sm mx-auto overflow-visible animate-in zoom-in-95 duration-200">
                 {/* Icon circle - overlaps top of card */}
                 <div className="flex justify-center -mt-10 mb-0">
-                    <div className={`flex items-center justify-center w-20 h-20 rounded-full ${config.bgColor} shadow-xl ring-4 ring-white`}>
+                    <div className={`flex items-center justify-center w-20 h-20 rounded-full ${config.bgColor} shadow-xl ring-4 ring-slate-900`}>
                         {config.icon}
                     </div>
                 </div>
@@ -92,11 +92,11 @@ export default function CustomAlert({ isOpen, variant, title, message, onClose }
                 <div className="px-8 pt-6 pb-8 text-center">
                     <h2
                         id="alert-title"
-                        className="text-3xl font-light text-slate-700 mt-2 mb-4 tracking-wide"
+                        className="text-3xl font-light text-slate-100 mt-2 mb-4 tracking-wide"
                     >
                         {title}
                     </h2>
-                    <p className="text-slate-500 text-base leading-relaxed mb-8">
+                    <p className="text-slate-400 text-base leading-relaxed mb-8">
                         {message}
                     </p>
                     <button

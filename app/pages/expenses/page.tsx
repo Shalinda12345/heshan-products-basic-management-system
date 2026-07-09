@@ -169,7 +169,8 @@ export default function ExpensesPage() {
     const totalTodayExpenses = recentExpenses.reduce((sum, item) => sum + Number(item.total), 0);
 
     return (
-        <main className="min-h-screen bg-slate-50/50 dark:bg-slate-900">
+        <main className="page-wrapper">
+            <div className="page-glow" />
             <CustomAlert
                 isOpen={alertState.isOpen}
                 variant={alertState.variant}
@@ -178,10 +179,10 @@ export default function ExpensesPage() {
                 onClose={closeAlert}
             />
             <ExpensesNavigation />
-            <div className="max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
+            <div className="page-content max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
                 {/* Header Section */}
-                <div className="border-b border-slate-200 dark:border-slate-800 pb-6">
-                    <h1 className="text-4xl font-bold">
+                <div className="section-divider pb-6">
+                    <h1 className="text-4xl font-bold text-slate-100">
                         💸 Expense Management
                     </h1>
                     <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm">
@@ -193,7 +194,7 @@ export default function ExpensesPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
                     {/* LEFT COLUMN: Record Form (5 Cols) */}
-                    <div className="lg:col-span-5 bg-white dark:bg-slate-800 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none p-6 sm:p-8 border border-slate-200/60 dark:border-slate-800">
+                    <div className="lg:col-span-5 glass-card rounded-2xl p-6 sm:p-8">
                         <div className="flex items-center gap-3 mb-6">
                             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -212,7 +213,7 @@ export default function ExpensesPage() {
                                     type="date"
                                     value={expenseDate}
                                     onChange={(e) => setExpenseDate(e.target.value)}
-                                    className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
+                                    className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                                     required
                                 />
                             </div>
@@ -231,7 +232,7 @@ export default function ExpensesPage() {
                                             setQuantityPerProduct(0);
                                             setAmount(0);
                                         }}
-                                        className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
+                                        className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                                         required
                                     >
                                         <option value="">Choose item type</option>
@@ -255,7 +256,7 @@ export default function ExpensesPage() {
                                                 type="number"
                                                 value={quantityPerProduct > 0 ? quantityPerProduct : ''}
                                                 onChange={(e) => setQuantityPerProduct(Number(e.target.value))}
-                                                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
+                                                className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                                                 placeholder="0"
                                                 min="1"
                                                 required
@@ -270,7 +271,7 @@ export default function ExpensesPage() {
                                                 step="0.01"
                                                 value={amount > 0 ? amount : ''}
                                                 onChange={(e) => setAmount(Number(e.target.value))}
-                                                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
+                                                className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                                                 placeholder="0.00"
                                                 min="0.01"
                                                 required
@@ -295,7 +296,7 @@ export default function ExpensesPage() {
                                             step="0.01"
                                             value={amount > 0 ? amount : ''}
                                             onChange={(e) => setAmount(Number(e.target.value))}
-                                            className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
+                                            className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                                             placeholder="0.00"
                                             min="0.01"
                                             required
@@ -311,7 +312,7 @@ export default function ExpensesPage() {
                                         onChange={(e) => {
                                             setEmployeeName(e.target.value);
                                         }}
-                                        className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
+                                        className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                                         required
                                     >
                                         <option value="">Choose Employee</option>
@@ -329,7 +330,7 @@ export default function ExpensesPage() {
                                         step="0.01"
                                         value={amount > 0 ? amount : ''}
                                         onChange={(e) => setAmount(Number(e.target.value))}
-                                        className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
+                                        className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                                         placeholder="0.00"
                                         min="0.01"
                                         required
@@ -373,7 +374,7 @@ export default function ExpensesPage() {
                     {/* RIGHT COLUMN: Recent Ledger (7 Cols) */}
                     <div className="lg:col-span-7 space-y-6">
                         {/* Summary Total Widget */}
-                        <div className="bg-gradient-to-r from-blue-50/50 to-indigo-50/40 dark:from-slate-800 dark:to-indigo-950/20 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 flex items-center justify-between gap-4 shadow-sm">
+                        <div className="glass-card-sm rounded-2xl p-6 flex items-center justify-between gap-4">
                             <div>
                                 <h3 className="text-slate-800 dark:text-white font-bold text-lg">Today&apos;s Expenses</h3>
                                 <p className="text-slate-400 text-xs mt-1">Live running ledger of expenditures recorded today.</p>
@@ -387,7 +388,7 @@ export default function ExpensesPage() {
                         </div>
 
                         {/* Recent Table list */}
-                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-lg shadow-slate-200/20 dark:shadow-none overflow-hidden">
+                        <div className="glass-card rounded-2xl overflow-hidden">
                             <div className="px-6 py-4.5 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
                                 <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 4a2 2 0 00-2-2m-2 3h3M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01" />
@@ -409,7 +410,7 @@ export default function ExpensesPage() {
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-xs text-left border-collapse">
                                         <thead>
-                                            <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider border-b border-slate-100 dark:border-slate-850">
+                                            <tr className="dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider border-b border-slate-100 dark:border-slate-850">
                                                 <th className="px-5 py-3 font-mono text-[10px] w-24">Entry ID</th>
                                                 <th className="px-5 py-3">Category/Description</th>
                                                 <th className="px-5 py-3 text-right">Details</th>

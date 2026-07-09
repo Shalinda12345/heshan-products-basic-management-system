@@ -2,29 +2,34 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import Image from 'next/image';
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
+  const logo = "../public";
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b border-zinc-200/80 bg-white/85 py-2 shadow-lg shadow-zinc-900/5 backdrop-blur-xl transition duration-300 dark:border-slate-800/80 dark:bg-slate-950/85">
+    <nav className="sticky top-0 z-50 w-full border-b border-slate-800/80 bg-slate-950/85 py-2 shadow-lg shadow-zinc-900/10 backdrop-blur-xl transition duration-300">
       <div className="mx-auto flex w-full max-w-[96rem] min-h-[80px] items-center justify-between gap-6 px-6 sm:px-8 lg:px-12">
-        
+
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white shadow-md shadow-sky-500/20">
-            <span className="text-lg font-bold">B</span>
-          </div>
           <div>
-            <Link href="/" className="text-2xl font-semibold tracking-tight text-zinc-900 transition hover:text-sky-600 dark:text-white dark:hover:text-sky-400">Basic Manager</Link>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">Dashboard</p>
+            <Link href="/">
+              <Image
+                src="/logo/heshan_logo_transparent.png" // Path relative to the public folder
+                alt="Descriptive text"
+                width={75}
+                height={75}
+              />
+            </Link>
           </div>
         </div>
 
-        <div className="hidden md:flex items-center gap-4 text-lg font-semibold text-zinc-600 dark:text-zinc-300">
-          <Link href="/" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Home</Link>
-          <Link href="/pages/sales" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Sales</Link>
-          <Link href="/pages/expenses" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Expenses</Link>
-          <Link href="/pages/stock" className="rounded-3xl border border-transparent bg-zinc-100/80 px-5 py-3 transition duration-300 ease-out hover:border-sky-300 hover:bg-white hover:text-sky-700 dark:bg-slate-900/70 dark:hover:border-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300">Stock</Link>
+        <div className="hidden md:flex items-center gap-4 text-lg font-semibold text-zinc-300">
+          <Link href="/" className="rounded-3xl border border-transparent bg-slate-900/70 px-5 py-3 transition duration-300 ease-out hover:border-sky-500 hover:bg-slate-900 hover:text-sky-300">Home</Link>
+          <Link href="/pages/sales" className="rounded-3xl border border-transparent bg-slate-900/70 px-5 py-3 transition duration-300 ease-out hover:border-sky-500 hover:bg-slate-900 hover:text-sky-300">Sales</Link>
+          <Link href="/pages/expenses" className="rounded-3xl border border-transparent bg-slate-900/70 px-5 py-3 transition duration-300 ease-out hover:border-sky-500 hover:bg-slate-900 hover:text-sky-300">Expenses</Link>
+          <Link href="/pages/stock" className="rounded-3xl border border-transparent bg-slate-900/70 px-5 py-3 transition duration-300 ease-out hover:border-sky-500 hover:bg-slate-900 hover:text-sky-300">Stock</Link>
         </div>
 
         {/* 2. MOBILE HAMBURGER BUTTON: Scale up the button and icon slightly */}
@@ -32,7 +37,7 @@ export default function Navbar() {
           <button
             onClick={() => setIsOpen(!isOpen)}
             type="button"
-            className="inline-flex h-14 w-14 items-center justify-center rounded-3xl bg-slate-100 text-slate-700 shadow-sm shadow-slate-900/10 transition duration-300 hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="inline-flex h-14 w-14 items-center justify-center rounded-3xl bg-slate-900 text-slate-200 shadow-sm shadow-slate-950/10 transition duration-300 hover:bg-slate-800"
             aria-controls="mobile-menu"
             aria-expanded={isOpen}
           >
@@ -54,12 +59,12 @@ export default function Navbar() {
 
       {/* 3. MOBILE DROPDOWN MENU: Bumped font from text-base to text-lg for easier thumb-tapping */}
       {isOpen && (
-        <div className="md:hidden border-t border-zinc-200/80 bg-white/95 backdrop-blur-lg dark:border-slate-800/80 dark:bg-slate-950/95" id="mobile-menu">
-          <div className="space-y-2 px-4 pt-4 pb-5 font-sans text-lg font-medium text-zinc-600 dark:text-zinc-300">
-            <Link href="/" className="block rounded-3xl bg-zinc-100/90 px-4 py-3 transition duration-300 hover:bg-zinc-200/80 hover:text-sky-700 dark:bg-slate-900/80 dark:hover:bg-slate-800/90 dark:hover:text-sky-300">Home</Link>
-            <Link href="/pages/sales" className="block rounded-3xl bg-zinc-100/90 px-4 py-3 transition duration-300 hover:bg-zinc-200/80 hover:text-sky-700 dark:bg-slate-900/80 dark:hover:bg-slate-800/90 dark:hover:text-sky-300">Sales</Link>
-            <Link href="/pages/expenses" className="block rounded-3xl bg-zinc-100/90 px-4 py-3 transition duration-300 hover:bg-zinc-200/80 hover:text-sky-700 dark:bg-slate-900/80 dark:hover:bg-slate-800/90 dark:hover:text-sky-300">Expenses</Link>
-            <Link href="/pages/stock" className="block rounded-3xl bg-zinc-100/90 px-4 py-3 transition duration-300 hover:bg-zinc-200/80 hover:text-sky-700 dark:bg-slate-900/80 dark:hover:bg-slate-800/90 dark:hover:text-sky-300">Stock</Link>
+        <div className="md:hidden border-t border-slate-800/80 bg-slate-950/95 backdrop-blur-lg" id="mobile-menu">
+          <div className="space-y-2 px-4 pt-4 pb-5 font-sans text-lg font-medium text-zinc-300">
+            <Link href="/" className="block rounded-3xl bg-slate-900/80 px-4 py-3 transition duration-300 hover:bg-slate-800/90 hover:text-sky-300">Home</Link>
+            <Link href="/pages/sales" className="block rounded-3xl bg-slate-900/80 px-4 py-3 transition duration-300 hover:bg-slate-800/90 hover:text-sky-300">Sales</Link>
+            <Link href="/pages/expenses" className="block rounded-3xl bg-slate-900/80 px-4 py-3 transition duration-300 hover:bg-slate-800/90 hover:text-sky-300">Expenses</Link>
+            <Link href="/pages/stock" className="block rounded-3xl bg-slate-900/80 px-4 py-3 transition duration-300 hover:bg-slate-800/90 hover:text-sky-300">Stock</Link>
           </div>
         </div>
       )}
