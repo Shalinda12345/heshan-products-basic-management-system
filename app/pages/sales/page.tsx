@@ -162,7 +162,8 @@ export default function SalesPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50/50 dark:bg-slate-900">
+    <main className="page-wrapper">
+      <div className="page-glow" />
       <CustomAlert
         isOpen={alertState.isOpen}
         variant={alertState.variant}
@@ -171,12 +172,12 @@ export default function SalesPage() {
         onClose={closeAlert}
       />
       <SalesNavigation />
-      <div className="max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
+      <div className="page-content max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
 
         {/* Header Section */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-slate-200 dark:border-slate-800 pb-6 gap-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between section-divider pb-6 gap-4">
           <div>
-            <h1 className="text-4xl font-bold ">
+            <h1 className="text-4xl font-bold text-slate-100">
               💼 Sales Management
             </h1>
             <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm">
@@ -220,7 +221,7 @@ export default function SalesPage() {
                   <select
                     value={productName}
                     onChange={(e) => setProductName(e.target.value)}
-                    className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white transition-all text-sm font-medium"
+                    className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white transition-all text-sm font-medium"
                     required
                   >
                     <option value="">Select a product</option>
@@ -242,7 +243,7 @@ export default function SalesPage() {
                     type="number"
                     value={quantityPerProduct > 0 ? quantityPerProduct : ''}
                     onChange={(e) => setQuantityPerProduct(Number(e.target.value))}
-                    className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white transition-all text-sm font-medium"
+                    className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white transition-all text-sm font-medium"
                     placeholder="0"
                     min="1"
                     required
@@ -257,7 +258,7 @@ export default function SalesPage() {
                     step="0.01"
                     value={sellingPricePerProduct > 0 ? sellingPricePerProduct : ''}
                     onChange={(e) => setSellingPricePerProduct(Number(e.target.value))}
-                    className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white transition-all text-sm font-medium"
+                    className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white transition-all text-sm font-medium"
                     placeholder="0.00"
                     min="0.01"
                     required
@@ -294,7 +295,7 @@ export default function SalesPage() {
         </AddSalesPopup>
 
         {/* Main Content Card */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none p-6 sm:p-8 border border-slate-200/60 dark:border-slate-800">
+        <div className="glass-card rounded-2xl p-6 sm:p-8">
           <SalesInvoicePage
             items={saleItems}
             onRemoveItem={removeItem}
@@ -306,7 +307,7 @@ export default function SalesPage() {
 
           {/* Confirm Sale Button */}
           {saleItems.length > 0 && (
-            <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700">
+            <div className="mt-8 pt-6 border-t border-slate-800/60">
               <button
                 onClick={handleSubmitInvoice}
                 disabled={isSubmitting || saleItems.length === 0}

@@ -128,7 +128,7 @@ export default function StockPage() {
   const getStockBadge = (quantity: number) => {
     if (quantity <= 0) {
       return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/30">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-950/30 text-red-400 border border-red-900/30">
           <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
           Out of Stock ({quantity})
         </span>
@@ -136,14 +136,14 @@ export default function StockPage() {
     }
     if (quantity < 10) {
       return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/30">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-950/30 text-amber-400 border border-amber-900/30">
           <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
           Low Stock ({quantity})
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/30">
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950/30 text-emerald-400 border border-emerald-900/30">
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
         In Stock ({quantity})
       </span>
@@ -151,7 +151,8 @@ export default function StockPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50/50 dark:bg-slate-900">
+    <main className="page-wrapper">
+      <div className="page-glow" />
       <CustomAlert
         isOpen={alertState.isOpen}
         variant={alertState.variant}
@@ -159,11 +160,11 @@ export default function StockPage() {
         message={alertState.message}
         onClose={closeAlert}
       />
-      <div className="max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
+      <div className="page-content max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
         
         {/* Header Section */}
-        <div className="border-b border-slate-200 dark:border-slate-800 pb-6">
-          <h1 className="text-4xl font-bold">
+        <div className="section-divider pb-6">
+          <h1 className="text-4xl font-bold text-slate-100">
             📦 Stock Management
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm">
@@ -175,7 +176,7 @@ export default function StockPage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* LEFT COLUMN: Record Form (5 Cols) */}
-          <div className="lg:col-span-5 bg-white dark:bg-slate-800 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none p-6 sm:p-8 border border-slate-200/60 dark:border-slate-800">
+          <div className="lg:col-span-5 glass-card rounded-2xl p-6 sm:p-8">
             <div className="flex items-center gap-3 mb-6">
               <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -196,7 +197,7 @@ export default function StockPage() {
                   <select
                     value={selectedProductId}
                     onChange={(e) => setSelectedProductId(e.target.value)}
-                    className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
+                    className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                     required
                   >
                     <option value="">Choose product</option>
@@ -217,7 +218,7 @@ export default function StockPage() {
                   type="number"
                   value={quantityToAdd > 0 ? quantityToAdd : ''}
                   onChange={(e) => setQuantityToAdd(Number(e.target.value))}
-                  className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 dark:bg-slate-900 dark:text-white bg-white text-sm font-medium transition-all"
+                  className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                   placeholder="0"
                   min="1"
                   required
@@ -258,7 +259,7 @@ export default function StockPage() {
           </div>
 
           {/* RIGHT COLUMN: Table (7 Cols) - Placed in top right corner */}
-          <div className="lg:col-span-7 bg-white dark:bg-slate-800 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none p-6 border border-slate-200/60 dark:border-slate-800">
+          <div className="lg:col-span-7 glass-card rounded-2xl p-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
               <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
                 <svg className="w-5.5 h-5.5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -274,7 +275,7 @@ export default function StockPage() {
                   placeholder="Search products..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full sm:w-60 pl-10 pr-4 py-2 border border-slate-200 dark:border-slate-700/60 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900/30 dark:bg-slate-900 dark:text-white bg-white text-xs font-semibold transition-all"
+                  className="w-full sm:w-60 pl-10 pr-4 py-2 border border-slate-800 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-900/30 bg-slate-900 text-white text-xs font-semibold transition-all"
                 />
                 <div className="absolute left-3 top-2.5 text-slate-400 dark:text-slate-500 pointer-events-none">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -284,38 +285,38 @@ export default function StockPage() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-700/60 shadow-sm bg-white dark:bg-slate-900">
+            <div className="overflow-hidden rounded-xl glass-card-sm">
               <table className="w-full text-sm text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-900/80 text-slate-500 dark:text-slate-400 uppercase text-xs font-bold tracking-wider border-b border-slate-200 dark:border-slate-700/60">
+                  <tr className="bg-slate-950/40 text-slate-400 uppercase text-xs font-bold tracking-wider border-b border-slate-800">
                     <th className="py-4 px-5 text-center w-16">ID</th>
                     <th className="py-4 px-5">Product Name</th>
                     <th className="py-4 px-5">Description</th>
                     <th className="py-4 px-5 text-right w-44">Remaining Stock</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700/60">
+                <tbody className="divide-y divide-slate-800">
                   {loading ? (
                     Array.from({ length: 4 }).map((_, i) => (
                       <tr key={i} className="animate-pulse">
-                        <td className="py-4.5 px-5"><div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-8 mx-auto" /></td>
-                        <td className="py-4.5 px-5"><div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-32" /></td>
-                        <td className="py-4.5 px-5"><div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-48" /></td>
-                        <td className="py-4.5 px-5 text-right"><div className="h-6 bg-slate-200 dark:bg-slate-700 rounded w-24 ml-auto" /></td>
+                        <td className="py-4.5 px-5"><div className="h-4 bg-slate-800 rounded w-8 mx-auto" /></td>
+                        <td className="py-4.5 px-5"><div className="h-4 bg-slate-800 rounded w-32" /></td>
+                        <td className="py-4.5 px-5"><div className="h-4 bg-slate-800 rounded w-48" /></td>
+                        <td className="py-4.5 px-5 text-right"><div className="h-6 bg-slate-800 rounded w-24 ml-auto" /></td>
                       </tr>
                     ))
                   ) : filteredStock.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="py-12 px-5 text-center">
                         <div className="flex flex-col items-center justify-center max-w-sm mx-auto space-y-3">
-                          <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-full border border-slate-100 dark:border-slate-700">
-                            <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                          <div className="p-3 bg-slate-900 rounded-full border border-slate-800">
+                            <svg className="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                             </svg>
                           </div>
                           <div>
-                            <p className="text-slate-800 dark:text-slate-200 font-bold text-sm">No items found</p>
-                            <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">
+                            <p className="text-slate-200 font-bold text-sm">No items found</p>
+                            <p className="text-slate-400 text-xs mt-1">
                               {searchQuery ? "No products match your search query." : "There are no products registered in the database."}
                             </p>
                           </div>
@@ -326,15 +327,15 @@ export default function StockPage() {
                     filteredStock.map((item) => (
                       <tr
                         key={item.product_id}
-                        className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition duration-150 group"
+                        className="hover:bg-slate-800/40 transition duration-150 group"
                       >
-                        <td className="py-4 px-5 text-center font-medium text-slate-500 dark:text-slate-400 text-xs">
+                        <td className="py-4 px-5 text-center font-medium text-slate-500 text-xs">
                           {item.product_id}
                         </td>
-                        <td className="py-4 px-5 font-semibold text-slate-900 dark:text-white">
+                        <td className="py-4 px-5 font-semibold text-white">
                           {item.product_name}
                         </td>
-                        <td className="py-4 px-5 text-slate-500 dark:text-slate-400 text-xs">
+                        <td className="py-4 px-5 text-slate-400 text-xs">
                           {item.description}
                         </td>
                         <td className="py-4 px-5 text-right font-medium">

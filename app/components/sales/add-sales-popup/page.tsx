@@ -21,11 +21,11 @@ export default function AddSalesPopup({ isOpen, onClose, children }: PopupProps)
       />
       
       {/* Popup content box */}
-      <div className="relative z-10 w-full max-w-md mx-4 p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-slate-700 transform transition-all duration-300 hover:shadow-3xl">
+      <div className="relative z-10 w-full max-w-md mx-4 p-8 bg-slate-900 rounded-2xl shadow-2xl shadow-black/80 border border-slate-800 transform transition-all duration-300">
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200"
+          className="absolute top-4 right-4 p-2 text-gray-500 hover:text-gray-300 hover:bg-slate-800 rounded-lg transition-colors duration-200"
           aria-label="Close popup"
         >
           <span className="text-2xl">✕</span>
