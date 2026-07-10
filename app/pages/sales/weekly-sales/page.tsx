@@ -30,7 +30,7 @@ export default function WeeklySales() {
   useEffect(() => {
     async function fetchWeeklySales() {
       try {
-        const response = await fetch("/api/sales/get-weekly-sales", { cache: 'no-store'});
+        const response = await fetch("/api/sales/get-weekly-sales", { cache: 'no-store' });
         if (!response.ok) throw new Error("Network response was not ok");
         const data = await response.json();
         setWeeklySales(data);
@@ -55,7 +55,7 @@ export default function WeeklySales() {
 
     setLoadingItemsId(saleId);
     try {
-      const response = await fetch(`/api/sales/get-sale-items?sale_id=${saleId}`);
+      const response = await fetch(`/api/sales/get-sale-items?sale_id=${saleId}`, { cache: 'no-store' });
       if (!response.ok) throw new Error("Failed to fetch items");
       const data = await response.json();
       setSaleItems(prev => ({ ...prev, [saleId]: data }));
@@ -66,7 +66,7 @@ export default function WeeklySales() {
     }
   };
 
-  const filteredSales = weeklySales.filter(sale => 
+  const filteredSales = weeklySales.filter(sale =>
     sale.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     `#w-sal-${sale.sale_id}`.includes(searchQuery.toLowerCase())
   );
@@ -85,7 +85,7 @@ export default function WeeklySales() {
             <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Weekly Statements</h1>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Review operational performance metrics for the current week cycles.</p>
           </div>
-          
+
           {/* Executive Summary Widget */}
           <div className="glass-card-sm rounded-2xl p-5 flex items-center gap-4 min-w-[280px]">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-2xl">
@@ -117,8 +117,8 @@ export default function WeeklySales() {
             />
           </div>
           {searchQuery && (
-            <button 
-              onClick={() => setSearchQuery("")} 
+            <button
+              onClick={() => setSearchQuery("")}
               className="ml-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-semibold"
             >
               Clear
@@ -156,7 +156,7 @@ export default function WeeklySales() {
                     const isExpanded = expandedSaleId === sale.sale_id;
                     return (
                       <React.Fragment key={sale.sale_id}>
-                        <tr 
+                        <tr
                           onClick={() => toggleExpandSale(sale.sale_id)}
                           className="hover:bg-slate-800/40 cursor-pointer transition-colors duration-150"
                         >

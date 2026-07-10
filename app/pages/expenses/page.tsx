@@ -59,7 +59,7 @@ export default function ExpensesPage() {
     useEffect(() => {
         async function fetchExpenseItemsList() {
             try {
-                const response = await fetch("/api/expenses/get-expense-item-list");
+                const response = await fetch("/api/expenses/get-expense-item-list", { cache: "no-store", });
                 if (!response.ok) throw new Error("Network response was not ok");
                 const data = await response.json();
                 setAllExpenseItems(data);
@@ -74,7 +74,7 @@ export default function ExpensesPage() {
 
     const fetchEmployeeList = async () => {
         try {
-            const response = await fetch("/api/employees");
+            const response = await fetch("/api/employees", { cache: "no-store", });
             if (!response.ok) throw new Error("Network response was not ok");
             const data = await response.json();
             setAllEmployees(data.data);

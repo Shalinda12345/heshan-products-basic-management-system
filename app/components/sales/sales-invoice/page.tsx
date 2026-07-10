@@ -43,7 +43,7 @@ export default function SalesInvoicePage(props: SalesInvoicePageProps) {
   useEffect(() => {
     async function fetchCustomers() {
       try {
-        const response = await fetch("/api/customers");
+        const response = await fetch("/api/customers", { cache: "no-store", });
         if (!response.ok) throw new Error("Network response was not ok");
         const data = await response.json();
         setAllCustomers(data);

@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { cookies } from "next/headers";
+
 import "./globals.css";
 import NavigationBar from "./components/navigation-bar/page";
+import SessionChecker from "./components/session-checker";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,23 +17,32 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Basic Manager — Business Intelligence Dashboard",
-  description: "Stakeholder-ready analytics dashboard with real-time sales, expenses, and net profit insights.",
+  title: "Basic Manager",
+  description: "Business Management System",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
+
+  const cookieStore = await cookies();
+
+  const loggedIn = cookieStore.has("auth_token");
+
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      className={`${geistSans.variable} ${geistMono.variable}`}
     >
-      <body className="min-h-full flex flex-col">
-        <NavigationBar />
+      <body>
+        <SessionChecker />
+
+        {loggedIn && <NavigationBar />}
+
         {children}
+
       </body>
     </html>
   );

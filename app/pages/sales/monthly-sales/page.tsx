@@ -30,7 +30,7 @@ export default function MonthlySales() {
   useEffect(() => {
     async function fetchMonthlySales() {
       try {
-        const response = await fetch("/api/sales/get-monthly-sales", { cache: 'no-store'});
+        const response = await fetch("/api/sales/get-monthly-sales", { cache: 'no-store' });
         if (!response.ok) throw new Error("Network response was not ok");
         const data = await response.json();
         setMonthlySales(data);
@@ -55,7 +55,7 @@ export default function MonthlySales() {
 
     setLoadingItemsId(saleId);
     try {
-      const response = await fetch(`/api/sales/get-sale-items?sale_id=${saleId}`);
+      const response = await fetch(`/api/sales/get-sale-items?sale_id=${saleId}`, { cache: "no-store", });
       if (!response.ok) throw new Error("Failed to fetch items");
       const data = await response.json();
       setSaleItems(prev => ({ ...prev, [saleId]: data }));
@@ -66,7 +66,7 @@ export default function MonthlySales() {
     }
   };
 
-  const filteredSales = monthlySales.filter(sale => 
+  const filteredSales = monthlySales.filter(sale =>
     sale.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     `#m-sal-${sale.sale_id}`.includes(searchQuery.toLowerCase())
   );
@@ -80,12 +80,12 @@ export default function MonthlySales() {
       <div className="page-content max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
 
         {/* Header Block */}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between section-divider pb-6 gap-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between section-divider pb-6 gap-4">
           <div>
             <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Monthly Fiscal Audits</h1>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">High-level visibility into cumulative sales metrics for the current calendar period.</p>
           </div>
-          
+
           {/* Executive Summary Widget */}
           <div className="glass-card-sm rounded-2xl p-5 flex items-center gap-4 min-w-[280px]">
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-2xl">
@@ -101,7 +101,7 @@ export default function MonthlySales() {
         </div>
 
         {/* Search Bar / Filter Panel */}
-          <div className="glass-card-sm rounded-xl p-4 flex items-center">
+        <div className="glass-card-sm rounded-xl p-4 flex items-center">
           <div className="relative w-full max-w-md">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -117,8 +117,8 @@ export default function MonthlySales() {
             />
           </div>
           {searchQuery && (
-            <button 
-              onClick={() => setSearchQuery("")} 
+            <button
+              onClick={() => setSearchQuery("")}
               className="ml-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-semibold"
             >
               Clear
@@ -127,7 +127,7 @@ export default function MonthlySales() {
         </div>
 
         {/* Table/Data Area */}
-          <div className="glass-card rounded-2xl overflow-hidden">
+        <div className="glass-card rounded-2xl overflow-hidden">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
               <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
@@ -156,7 +156,7 @@ export default function MonthlySales() {
                     const isExpanded = expandedSaleId === sale.sale_id;
                     return (
                       <React.Fragment key={sale.sale_id}>
-                        <tr 
+                        <tr
                           onClick={() => toggleExpandSale(sale.sale_id)}
                           className="hover:bg-slate-800/40 cursor-pointer transition-colors duration-150"
                         >
