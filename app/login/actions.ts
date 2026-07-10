@@ -28,7 +28,7 @@ export async function handleLogin(prevState: any, formData: FormData) {
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
         path: "/",
-        maxAge: 15,
+        maxAge: 60 * 60 * 1,
     });
 
     redirect("/");
