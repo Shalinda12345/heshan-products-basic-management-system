@@ -17,6 +17,13 @@ interface Product {
   product_name: string;
 }
 
+interface StockItem {
+  product_id: number;
+  product_name: string;
+  description: string;
+  quantity: number;
+}
+
 export default function SalesPage() {
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
@@ -34,6 +41,10 @@ export default function SalesPage() {
     title: '',
     message: '',
   });
+  const [stockItems, setStockItems] = useState<StockItem[]>([]);
+  const [quantity, setQuantity] = useState<number>(0);
+
+
 
   const showAlert = (variant: AlertVariant, title: string, message: string) => {
     setAlertState({ isOpen: true, variant, title, message });
@@ -43,6 +54,23 @@ export default function SalesPage() {
     setAlertState(prev => ({ ...prev, isOpen: false }));
   };
 
+  const fetchStock = async () => {
+    try {
+      const response = await fetch("/api/stock", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch stock");
+      }
+
+      const data = await response.json();
+      setStockItems(data);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   useEffect(() => {
     async function fetchProducts() {
       try {
@@ -50,6 +78,8 @@ export default function SalesPage() {
         if (!response.ok) throw new Error("Network response was not ok");
         const data = await response.json();
         setAllProducts(data);
+
+        await fetchStock();
       } catch (error) {
         console.error("Error fetching products:", error);
       } finally {
@@ -59,6 +89,13 @@ export default function SalesPage() {
 
     fetchProducts();
   }, []);
+
+  const stock = stockItems.find(
+    (item) => item.product_name === productName
+  );
+
+  const availableStock = stock?.quantity ?? 0;
+
 
   const handleClick = () => {
     setIsPopupOpen(true);
@@ -76,6 +113,16 @@ export default function SalesPage() {
     event.preventDefault();
 
     if (!productName || quantityPerProduct <= 0 || sellingPricePerProduct <= 0) {
+      return;
+    }
+
+    if (quantityPerProduct > availableStock) {
+      showAlert(
+        "warning",
+        "Insufficient Stock",
+        `Only ${availableStock} units of "${productName}" are available in stock.`
+      );
+
       return;
     }
 
