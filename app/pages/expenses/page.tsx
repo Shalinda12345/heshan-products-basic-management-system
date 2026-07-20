@@ -4,6 +4,8 @@ import ExpensesNavigation from "@/app/components/expenses/expenses-navigation/pa
 import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert/page';
 import React, { useEffect, useState, FormEvent } from "react";
 
+// ─── Interfaces ───────────────────────────────────────────────────────────────
+
 interface Expense {
     expense_item_id: number;
     expense_name: string;
@@ -33,7 +35,33 @@ interface StockItem {
     quantity: number;
 }
 
+interface Sale {
+    sale_id: number;
+    customer_name: string;
+    sale_date: string;
+    grand_total: number;
+}
+
+interface SaleItem {
+    sale_detail_id: number;
+    sale_id: number;
+    product_name: string;
+    quantity: number;
+    selling_price: number;
+    total: number;
+}
+
+type ReturnType =
+    | ""
+    | "stock_expense_return"
+    | "stock_replacement_return"
+    | "sale_reduction_return"
+    | "sale_reduction_expense_return";
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function ExpensesPage() {
+    // ── General form state ────────────────────────────────────────────────────
     const [expenseName, setExpenseName] = useState("");
     const [allExpenseItems, setAllExpenseItems] = useState<Expense_Item_List[]>([]);
     const [loadingDropdown, setLoadingDropdown] = useState<boolean>(true);
@@ -44,35 +72,80 @@ export default function ExpensesPage() {
     const [employeeName, setEmployeeName] = useState("");
     const [allEmployees, setAllEmployees] = useState([]);
 
-    // Return Item states
+    // ── Stock-based return state (all 4 types share the stock picker) ─────────
     const [allStockItems, setAllStockItems] = useState<StockItem[]>([]);
     const [selectedReturnProductId, setSelectedReturnProductId] = useState("");
     const [returnQuantity, setReturnQuantity] = useState(0);
     const [returnAmount, setReturnAmount] = useState(0);
 
-    // For right side recent list
+    // ── Return type sub-selector ──────────────────────────────────────────────
+    const [returnType, setReturnType] = useState<ReturnType>("");
+
+    // ── Sale-reduction return state ───────────────────────────────────────────
+    const [allSales, setAllSales] = useState<Sale[]>([]);
+    const [loadingSales, setLoadingSales] = useState(false);
+    const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
+    const [selectedSaleItems, setSelectedSaleItems] = useState<SaleItem[]>([]);
+    const [loadingSaleItems, setLoadingSaleItems] = useState(false);
+    const [selectedSaleItemName, setSelectedSaleItemName] = useState("");
+    const [saleReturnQuantity, setSaleReturnQuantity] = useState(0);
+    const [saleReturnPrice, setSaleReturnPrice] = useState(0);
+    const [saleReturnExpensePrice, setSaleReturnExpensePrice] = useState(0);
+    // For sale_reduction_return: user also picks a stock item to credit back
+    const [creditStockProductId, setCreditStockProductId] = useState("");
+
+    // ── Right-side ledger ─────────────────────────────────────────────────────
     const [recentExpenses, setRecentExpenses] = useState<Expense[]>([]);
     const [loadingRecent, setLoadingRecent] = useState<boolean>(true);
-    const [alertState, setAlertState] = useState<{ isOpen: boolean; variant: AlertVariant; title: string; message: string }>({
-        isOpen: false,
-        variant: 'info',
-        title: '',
-        message: '',
-    });
+    const [alertState, setAlertState] = useState<{
+        isOpen: boolean;
+        variant: AlertVariant;
+        title: string;
+        message: string;
+    }>({ isOpen: false, variant: 'info', title: '', message: '' });
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
     const showAlert = (variant: AlertVariant, title: string, message: string) => {
         setAlertState({ isOpen: true, variant, title, message });
     };
+    const closeAlert = () => setAlertState(prev => ({ ...prev, isOpen: false }));
 
-    const closeAlert = () => {
-        setAlertState(prev => ({ ...prev, isOpen: false }));
+    // ── Derived values ────────────────────────────────────────────────────────
+    const selectedReturnProduct = allStockItems.find(
+        (s) => s.product_id === Number(selectedReturnProductId)
+    );
+    const returnTotal = returnQuantity * returnAmount;
+
+    const selectedSale = allSales.find((s) => s.sale_id === selectedSaleId);
+    const selectedSaleItem = selectedSaleItems.find((i) => i.product_name === selectedSaleItemName);
+    const saleReturnTotal = saleReturnQuantity * saleReturnPrice;
+    const saleReturnExpenseTotal = saleReturnQuantity * saleReturnExpensePrice;
+
+    const requiresQuantity = ["Milk Packet(900ml)", "Sugar", "Watalappan Cup", "Drink Cup"].includes(expenseName);
+    const calculatedTotal = requiresQuantity ? quantityPerProduct * amount : amount;
+
+    // ── Reset helper — clears all return-specific fields ─────────────────────
+    const resetReturnFields = () => {
+        setReturnType("");
+        setSelectedReturnProductId("");
+        setReturnQuantity(0);
+        setReturnAmount(0);
+        setAllSales([]);
+        setSelectedSaleId(null);
+        setSelectedSaleItems([]);
+        setSelectedSaleItemName("");
+        setSaleReturnQuantity(0);
+        setSaleReturnPrice(0);
+        setSaleReturnExpensePrice(0);
+        setCreditStockProductId("");
     };
 
-    // Fetch dropdown items list
+    // ─── Data fetching ────────────────────────────────────────────────────────
+
     useEffect(() => {
         async function fetchExpenseItemsList() {
             try {
-                const response = await fetch("/api/expenses/get-expense-item-list", { cache: "no-store", });
+                const response = await fetch("/api/expenses/get-expense-item-list", { cache: "no-store" });
                 if (!response.ok) throw new Error("Network response was not ok");
                 const data = await response.json();
                 setAllExpenseItems(data);
@@ -87,7 +160,7 @@ export default function ExpensesPage() {
 
     const fetchEmployeeList = async () => {
         try {
-            const response = await fetch("/api/employees", { cache: "no-store", });
+            const response = await fetch("/api/employees", { cache: "no-store" });
             if (!response.ok) throw new Error("Network response was not ok");
             const data = await response.json();
             setAllEmployees(data.data);
@@ -98,7 +171,6 @@ export default function ExpensesPage() {
         }
     };
 
-    // Fetch today's expenses
     const fetchRecentExpenses = async () => {
         try {
             const response = await fetch("/api/expenses/get-daily-expenses", { cache: 'no-store' });
@@ -112,20 +184,6 @@ export default function ExpensesPage() {
         }
     };
 
-    // Safely execute initial data loading inside a local async handler 
-    // to satisfy strict custom react-hooks linters
-    useEffect(() => {
-        const initializeLedger = async () => {
-            await fetchRecentExpenses();
-        };
-        initializeLedger();
-    }, []);
-
-    useEffect(() => {
-        fetchEmployeeList();
-    }, []);
-
-    // Fetch stock items for Return Item dropdown
     const fetchStockItems = async () => {
         try {
             const response = await fetch("/api/stock", { cache: "no-store" });
@@ -137,78 +195,257 @@ export default function ExpensesPage() {
         }
     };
 
+    const fetchSalesList = async () => {
+        setLoadingSales(true);
+        try {
+            const response = await fetch("/api/sales/get-sales-list", { cache: "no-store" });
+            if (!response.ok) throw new Error("Failed to fetch sales");
+            const data = await response.json();
+            setAllSales(data);
+        } catch (error) {
+            console.error("Error fetching sales list:", error);
+        } finally {
+            setLoadingSales(false);
+        }
+    };
+
+    const fetchSaleItems = async (saleId: number) => {
+        setLoadingSaleItems(true);
+        setSelectedSaleItems([]);
+        setSelectedSaleItemName("");
+        setSaleReturnQuantity(0);
+        setSaleReturnPrice(0);
+        try {
+            const response = await fetch(`/api/sales/get-sale-items?sale_id=${saleId}`, { cache: "no-store" });
+            if (!response.ok) throw new Error("Failed to fetch sale items");
+            const data = await response.json();
+            setSelectedSaleItems(data);
+        } catch (error) {
+            console.error("Error fetching sale items:", error);
+        } finally {
+            setLoadingSaleItems(false);
+        }
+    };
+
+    useEffect(() => { const init = async () => { await fetchRecentExpenses(); }; init(); }, []);
+    useEffect(() => { fetchEmployeeList(); }, []);
+    useEffect(() => { fetchStockItems(); }, []);
+
+    // When "Return" is chosen and then return type changes to a sale-reduction type, fetch sales
     useEffect(() => {
-        fetchStockItems();
-    }, []);
+        if (
+            returnType === "sale_reduction_return" ||
+            returnType === "sale_reduction_expense_return"
+        ) {
+            fetchSalesList();
+        }
+    }, [returnType]);
 
-    // Derived values for Return flow (used inside the unified form)
-    const selectedReturnProduct = allStockItems.find(
-        (s) => s.product_id === Number(selectedReturnProductId)
-    );
-    const returnTotal = returnQuantity * returnAmount;
-
-    // Check if the current expense requires a quantity breakdown
-    const requiresQuantity = ["Milk Packet(900ml)", "Sugar", "Watalappan Cup", "Drink Cup"].includes(expenseName);
-
-    // Dynamic calculations
-    const calculatedTotal = requiresQuantity ? quantityPerProduct * amount : amount;
+    // ─── Form submission ──────────────────────────────────────────────────────
 
     const addToExpenseList = async (e: FormEvent) => {
         e.preventDefault();
 
-        // --- Return Item branch ---
+        // ── Return branch ─────────────────────────────────────────────────────
         if (expenseName === "Return") {
-            if (!expenseDate || !selectedReturnProductId || returnQuantity <= 0 || returnAmount <= 0) {
-                showAlert('warning', 'Missing Fields', 'Please fill in all required fields with positive values.');
-                return;
-            }
-            if (selectedReturnProduct && returnQuantity > selectedReturnProduct.quantity) {
-                showAlert('warning', 'Insufficient Stock', `You cannot return more than the current stock (${selectedReturnProduct.quantity} units).`);
+            if (!returnType) {
+                showAlert('warning', 'Select Return Type', 'Please choose a Return Type to proceed.');
                 return;
             }
 
-            setIsSubmitting(true);
-            setLoadingRecent(true);
-
-            try {
-                const response = await fetch("/api/expenses/save-return-expenses", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        product_id: Number(selectedReturnProductId),
-                        product_name: selectedReturnProduct?.product_name ?? "",
-                        quantity: returnQuantity,
-                        per_expense_amount: returnAmount,
-                        total: returnTotal,
-                        expense_date: expenseDate,
-                    }),
-                });
-
-                const result = await response.json();
-
-                if (response.ok && result.success) {
-                    await fetchRecentExpenses();
-                    await fetchStockItems();
-                    setExpenseName("");
-                    setSelectedReturnProductId("");
-                    setReturnQuantity(0);
-                    setReturnAmount(0);
-                    showAlert('success', 'Return Processed', `Return for "${selectedReturnProduct?.product_name}" recorded and stock updated.`);
-                } else {
-                    showAlert('error', 'Return Failed', result.message || 'Failed to process the return.');
-                    setLoadingRecent(false);
+            // ── stock_expense_return ──────────────────────────────────────────
+            if (returnType === "stock_expense_return") {
+                if (!expenseDate || !selectedReturnProductId || returnQuantity <= 0 || returnAmount <= 0) {
+                    showAlert('warning', 'Missing Fields', 'Please fill in all required fields with positive values.');
+                    return;
                 }
-            } catch (error) {
-                console.error("Network error processing return:", error);
-                showAlert('error', 'Network Error', 'A network connection error occurred. Please try again.');
-                setLoadingRecent(false);
-            } finally {
-                setIsSubmitting(false);
+                if (selectedReturnProduct && returnQuantity > selectedReturnProduct.quantity) {
+                    showAlert('warning', 'Insufficient Stock', `Cannot return more than current stock (${selectedReturnProduct.quantity} units).`);
+                    return;
+                }
+
+                setIsSubmitting(true);
+                setLoadingRecent(true);
+                try {
+                    const res = await fetch("/api/expenses/save-return-expenses", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            return_type: "stock_expense_return",
+                            product_id: Number(selectedReturnProductId),
+                            product_name: selectedReturnProduct?.product_name ?? "",
+                            quantity: returnQuantity,
+                            per_unit_amount: returnAmount,
+                            total: returnTotal,
+                            expense_date: expenseDate,
+                        }),
+                    });
+                    const result = await res.json();
+                    if (res.ok && result.success) {
+                        await fetchRecentExpenses();
+                        await fetchStockItems();
+                        setExpenseName("");
+                        resetReturnFields();
+                        showAlert('success', 'Return Processed', `Stock Expense Return for "${selectedReturnProduct?.product_name}" recorded.`);
+                    } else {
+                        showAlert('error', 'Return Failed', result.message || 'Failed to process the return.');
+                        setLoadingRecent(false);
+                    }
+                } catch {
+                    showAlert('error', 'Network Error', 'A network error occurred. Please try again.');
+                    setLoadingRecent(false);
+                } finally {
+                    setIsSubmitting(false);
+                }
+                return;
             }
-            return;
+
+            // ── stock_replacement_return ──────────────────────────────────────
+            if (returnType === "stock_replacement_return") {
+                if (!expenseDate || !selectedReturnProductId || returnQuantity <= 0) {
+                    showAlert('warning', 'Missing Fields', 'Please fill in all required fields with positive values.');
+                    return;
+                }
+                if (selectedReturnProduct && returnQuantity > selectedReturnProduct.quantity) {
+                    showAlert('warning', 'Insufficient Stock', `Cannot return more than current stock (${selectedReturnProduct.quantity} units).`);
+                    return;
+                }
+
+                setIsSubmitting(true);
+                setLoadingRecent(true);
+                try {
+                    const res = await fetch("/api/expenses/save-return-expenses", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            return_type: "stock_replacement_return",
+                            product_id: Number(selectedReturnProductId),
+                            product_name: selectedReturnProduct?.product_name ?? "",
+                            quantity: returnQuantity,
+                            per_unit_amount: 0,
+                            total: 0,
+                            expense_date: expenseDate,
+                        }),
+                    });
+                    const result = await res.json();
+                    if (res.ok && result.success) {
+                        await fetchRecentExpenses();
+                        await fetchStockItems();
+                        setExpenseName("");
+                        resetReturnFields();
+                        showAlert('success', 'Return Processed', `Stock Replacement Return for "${selectedReturnProduct?.product_name}" recorded. No expense created.`);
+                    } else {
+                        showAlert('error', 'Return Failed', result.message || 'Failed to process the return.');
+                        setLoadingRecent(false);
+                    }
+                } catch {
+                    showAlert('error', 'Network Error', 'A network error occurred. Please try again.');
+                    setLoadingRecent(false);
+                } finally {
+                    setIsSubmitting(false);
+                }
+                return;
+            }
+
+            // ── sale_reduction_return ─────────────────────────────────────────
+            if (returnType === "sale_reduction_return") {
+                if (!expenseDate || !selectedSaleId || !selectedSaleItemName || saleReturnQuantity <= 0 || saleReturnPrice <= 0 || !creditStockProductId) {
+                    showAlert('warning', 'Missing Fields', 'Please complete all sale return fields including the stock item to credit.');
+                    return;
+                }
+                if (selectedSaleItem && saleReturnQuantity > Number(selectedSaleItem.quantity)) {
+                    showAlert('warning', 'Quantity Exceeded', `Cannot return more than sold quantity (${selectedSaleItem.quantity} units).`);
+                    return;
+                }
+
+                setIsSubmitting(true);
+                setLoadingRecent(true);
+                try {
+                    const res = await fetch("/api/expenses/save-return-expenses", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            return_type: "sale_reduction_return",
+                            sale_id: selectedSaleId,
+                            sale_product_name: selectedSaleItemName,
+                            sale_quantity: saleReturnQuantity,
+                            sale_per_unit_amount: saleReturnPrice,
+                            sale_total: saleReturnTotal,
+                            // Stock item to credit back
+                            product_id: Number(creditStockProductId),
+                            expense_date: expenseDate,
+                        }),
+                    });
+                    const result = await res.json();
+                    if (res.ok && result.success) {
+                        await fetchRecentExpenses();
+                        await fetchStockItems();
+                        setExpenseName("");
+                        resetReturnFields();
+                        showAlert('success', 'Return Processed', `Sale #${selectedSaleId} reduced and stock credited.`);
+                    } else {
+                        showAlert('error', 'Return Failed', result.message || 'Failed to process the return.');
+                        setLoadingRecent(false);
+                    }
+                } catch {
+                    showAlert('error', 'Network Error', 'A network error occurred. Please try again.');
+                    setLoadingRecent(false);
+                } finally {
+                    setIsSubmitting(false);
+                }
+                return;
+            }
+
+            // ── sale_reduction_expense_return ─────────────────────────────────
+            if (returnType === "sale_reduction_expense_return") {
+                if (!expenseDate || !selectedSaleId || !selectedSaleItemName || saleReturnQuantity <= 0 || saleReturnPrice <= 0 || saleReturnExpensePrice <= 0) {
+                    showAlert('warning', 'Missing Fields', 'Please complete all sale return fields.');
+                    return;
+                }
+                if (selectedSaleItem && saleReturnQuantity > Number(selectedSaleItem.quantity)) {
+                    showAlert('warning', 'Quantity Exceeded', `Cannot return more than sold quantity (${selectedSaleItem.quantity} units).`);
+                    return;
+                }
+
+                setIsSubmitting(true);
+                setLoadingRecent(true);
+                try {
+                    const res = await fetch("/api/expenses/save-return-expenses", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            return_type: "sale_reduction_expense_return",
+                            sale_id: selectedSaleId,
+                            sale_product_name: selectedSaleItemName,
+                            sale_quantity: saleReturnQuantity,
+                            sale_per_unit_amount: saleReturnPrice,
+                            sale_total: saleReturnTotal,
+                            expense_per_unit_amount: saleReturnExpensePrice,
+                            expense_total: saleReturnExpenseTotal,
+                            expense_date: expenseDate,
+                        }),
+                    });
+                    const result = await res.json();
+                    if (res.ok && result.success) {
+                        await fetchRecentExpenses();
+                        setExpenseName("");
+                        resetReturnFields();
+                        showAlert('success', 'Return Processed', `Sale #${selectedSaleId} reduced and expense recorded.`);
+                    } else {
+                        showAlert('error', 'Return Failed', result.message || 'Failed to process the return.');
+                        setLoadingRecent(false);
+                    }
+                } catch {
+                    showAlert('error', 'Network Error', 'A network error occurred. Please try again.');
+                    setLoadingRecent(false);
+                } finally {
+                    setIsSubmitting(false);
+                }
+                return;
+            }
         }
 
-        // --- Normal expense branch ---
+        // ── Normal expense branch ─────────────────────────────────────────────
         if (!expenseDate || !expenseName || amount <= 0 || (requiresQuantity && quantityPerProduct <= 0)) {
             showAlert('warning', 'Missing Fields', 'Please fill in all required fields with positive values.');
             return;
@@ -252,6 +489,32 @@ export default function ExpensesPage() {
 
     const totalTodayExpenses = recentExpenses.reduce((sum, item) => sum + Number(item.total), 0);
 
+    // ─── Return type label helper ─────────────────────────────────────────────
+    const returnTypeLabel: Record<string, string> = {
+        stock_expense_return: "Stock Expense Return",
+        stock_replacement_return: "Stock Replacement Return",
+        sale_reduction_return: "Sale Reduction Return",
+        sale_reduction_expense_return: "Sale Reduction Expense Return",
+    };
+
+    // ── Badge color per return type ───────────────────────────────────────────
+    const returnTypeBadgeClass: Record<string, string> = {
+        stock_expense_return: "bg-rose-950/30 border-rose-800/40 text-rose-400",
+        stock_replacement_return: "bg-amber-950/30 border-amber-800/40 text-amber-400",
+        sale_reduction_return: "bg-teal-950/30 border-teal-800/40 text-teal-400",
+        sale_reduction_expense_return: "bg-purple-950/30 border-purple-800/40 text-purple-400",
+    };
+    const returnTypeAccent: Record<string, string> = {
+        stock_expense_return: "border-rose-800/60 focus:border-rose-500 focus:ring-rose-900/30",
+        stock_replacement_return: "border-amber-800/60 focus:border-amber-500 focus:ring-amber-900/30",
+        sale_reduction_return: "border-teal-800/60 focus:border-teal-500 focus:ring-teal-900/30",
+        sale_reduction_expense_return: "border-purple-800/60 focus:border-purple-500 focus:ring-purple-900/30",
+    };
+    const currentAccent = returnType ? returnTypeAccent[returnType] : "border-amber-800/60 focus:border-amber-500 focus:ring-amber-900/30";
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // RENDER
+    // ─────────────────────────────────────────────────────────────────────────
     return (
         <main className="page-wrapper">
             <div className="page-glow" />
@@ -264,11 +527,9 @@ export default function ExpensesPage() {
             />
             <ExpensesNavigation />
             <div className="page-content max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
-                {/* Header Section */}
+                {/* Header */}
                 <div className="section-divider pb-6">
-                    <h1 className="text-4xl font-bold text-slate-100">
-                        💸 Expense Management
-                    </h1>
+                    <h1 className="text-4xl font-bold text-slate-100">💸 Expense Management</h1>
                     <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm">
                         Record daily corporate expenditures and monitor outbound cash flow logs.
                     </p>
@@ -289,6 +550,7 @@ export default function ExpensesPage() {
                         </div>
 
                         <form onSubmit={addToExpenseList} className="space-y-5">
+                            {/* Date */}
                             <div>
                                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
                                     Expenditure Date
@@ -302,6 +564,7 @@ export default function ExpensesPage() {
                                 />
                             </div>
 
+                            {/* Category Dropdown */}
                             <div>
                                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
                                     Expense Category / Item
@@ -315,9 +578,7 @@ export default function ExpensesPage() {
                                             setExpenseName(e.target.value);
                                             setQuantityPerProduct(0);
                                             setAmount(0);
-                                            setSelectedReturnProductId("");
-                                            setReturnQuantity(0);
-                                            setReturnAmount(0);
+                                            resetReturnFields();
                                         }}
                                         className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                                         required
@@ -331,90 +592,373 @@ export default function ExpensesPage() {
                                     </select>
                                 )}
 
-                                {/* Return product picker — shown only when "Return" is selected */}
+                                {/* ════════════════════════════════════════════════
+                                    RETURN sub-panel — shown only when "Return" selected
+                                    ════════════════════════════════════════════════ */}
                                 {expenseName === "Return" && (
-                                    <div className="mt-4 space-y-3">
+                                    <div className="mt-4 space-y-4">
+
+                                        {/* ── Return Type Selector ─────────────────── */}
                                         <div>
-                                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-                                                Choose a Product to Return
+                                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                                Return Type
                                             </label>
                                             <select
-                                                value={selectedReturnProductId}
+                                                value={returnType}
                                                 onChange={(e) => {
-                                                    setSelectedReturnProductId(e.target.value);
+                                                    setReturnType(e.target.value as ReturnType);
+                                                    // Reset sub-fields when type changes
+                                                    setSelectedReturnProductId("");
                                                     setReturnQuantity(0);
                                                     setReturnAmount(0);
+                                                    setSelectedSaleId(null);
+                                                    setSelectedSaleItems([]);
+                                                    setSelectedSaleItemName("");
+                                                    setSaleReturnQuantity(0);
+                                                    setSaleReturnPrice(0);
+                                                    setSaleReturnExpensePrice(0);
+                                                    setCreditStockProductId("");
                                                 }}
-                                                className="w-full px-4 py-3 border border-amber-800/60 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 bg-slate-900 text-white text-sm font-medium transition-all ${currentAccent}`}
                                                 required
                                             >
-                                                <option value="">Choose a product</option>
-                                                {allStockItems.map((item) => (
-                                                    <option key={item.product_id} value={item.product_id}>
-                                                        {item.product_name} (Stock: {item.quantity})
-                                                    </option>
-                                                ))}
+                                                <option value="">Choose return type</option>
+                                                <option value="stock_expense_return">Stock Expense Return</option>
+                                                <option value="stock_replacement_return">Stock Replacement Return</option>
+                                                <option value="sale_reduction_return">Sale Reduction Return</option>
+                                                <option value="sale_reduction_expense_return">Sale Reduction Expense Return</option>
                                             </select>
-                                            {selectedReturnProduct && (
-                                                <p className="text-xs text-amber-400 mt-1.5 font-medium">
-                                                    Current stock: <span className="font-bold">{selectedReturnProduct.quantity}</span> units
-                                                </p>
-                                            )}
                                         </div>
 
-                                        {selectedReturnProductId !== "" && (
+                                        {/* ── Return type badge / description ──────── */}
+                                        {returnType && (
+                                            <div className={`px-4 py-2.5 rounded-xl border text-xs font-semibold ${returnTypeBadgeClass[returnType]}`}>
+                                                {returnType === "stock_expense_return" && "📦 Stock will be reduced and an expense entry will be recorded."}
+                                                {returnType === "stock_replacement_return" && "🔄 Stock will be reduced. No expense will be recorded."}
+                                                {returnType === "sale_reduction_return" && "🛒 Sale amount will be reduced and returned goods added back to stock."}
+                                                {returnType === "sale_reduction_expense_return" && "⚠️ Sale amount will be reduced and goods written off as an expense. No stock credit."}
+                                            </div>
+                                        )}
+
+                                        {/* ══════════════════════════════════════════════════
+                                            STOCK-BASED RETURNS (stock_expense / stock_replacement)
+                                            ══════════════════════════════════════════════════ */}
+                                        {(returnType === "stock_expense_return" || returnType === "stock_replacement_return") && (
                                             <div className="space-y-3">
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-                                                            Quantity
-                                                        </label>
-                                                        <input
-                                                            type="number"
-                                                            value={returnQuantity > 0 ? returnQuantity : ''}
-                                                            onChange={(e) => setReturnQuantity(Number(e.target.value))}
-                                                            className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
-                                                            placeholder="0"
-                                                            min="1"
-                                                            max={selectedReturnProduct?.quantity ?? undefined}
-                                                            required
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-                                                            Amount per Unit (Rs.)
-                                                        </label>
-                                                        <input
-                                                            type="number"
-                                                            step="0.01"
-                                                            value={returnAmount > 0 ? returnAmount : ''}
-                                                            onChange={(e) => setReturnAmount(Number(e.target.value))}
-                                                            className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
-                                                            placeholder="0.00"
-                                                            min="0.01"
-                                                            required
-                                                        />
-                                                    </div>
+                                                {/* Product picker */}
+                                                <div>
+                                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                                        Choose a Product to Return
+                                                    </label>
+                                                    <select
+                                                        value={selectedReturnProductId}
+                                                        onChange={(e) => {
+                                                            setSelectedReturnProductId(e.target.value);
+                                                            setReturnQuantity(0);
+                                                            setReturnAmount(0);
+                                                        }}
+                                                        className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 bg-slate-900 text-white text-sm font-medium transition-all ${currentAccent}`}
+                                                        required
+                                                    >
+                                                        <option value="">Choose a product</option>
+                                                        {allStockItems.map((item) => (
+                                                            <option key={item.product_id} value={item.product_id}>
+                                                                {item.product_name} (Stock: {item.quantity})
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    {selectedReturnProduct && (
+                                                        <p className="text-xs text-amber-400 mt-1.5 font-medium">
+                                                            Current stock: <span className="font-bold">{selectedReturnProduct.quantity}</span> units
+                                                        </p>
+                                                    )}
                                                 </div>
-                                                <div className="p-3.5 bg-amber-950/20 border border-amber-900/30 rounded-xl flex items-center justify-between text-sm">
-                                                    <span className="text-slate-400">Total Return Expense:</span>
-                                                    <span className="font-bold text-amber-400">
-                                                        Rs. {returnTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                                    </span>
+
+                                                {selectedReturnProductId !== "" && (
+                                                    <div className="space-y-3">
+                                                        {returnType === "stock_replacement_return" ? (
+                                                            <div>
+                                                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Quantity</label>
+                                                                <input
+                                                                    type="number"
+                                                                    value={returnQuantity > 0 ? returnQuantity : ''}
+                                                                    onChange={(e) => setReturnQuantity(Number(e.target.value))}
+                                                                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 bg-slate-900 text-white text-sm font-medium transition-all ${currentAccent}`}
+                                                                    placeholder="0"
+                                                                    min="1"
+                                                                    max={selectedReturnProduct?.quantity ?? undefined}
+                                                                    required
+                                                                />
+                                                            </div>
+                                                        ) : (
+                                                            <div className="grid grid-cols-2 gap-4">
+                                                                <div>
+                                                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Quantity</label>
+                                                                    <input
+                                                                        type="number"
+                                                                        value={returnQuantity > 0 ? returnQuantity : ''}
+                                                                        onChange={(e) => setReturnQuantity(Number(e.target.value))}
+                                                                        className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 bg-slate-900 text-white text-sm font-medium transition-all ${currentAccent}`}
+                                                                        placeholder="0"
+                                                                        min="1"
+                                                                        max={selectedReturnProduct?.quantity ?? undefined}
+                                                                        required
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Amount per Unit (Rs.)</label>
+                                                                    <input
+                                                                        type="number"
+                                                                        step="0.01"
+                                                                        value={returnAmount > 0 ? returnAmount : ''}
+                                                                        onChange={(e) => setReturnAmount(Number(e.target.value))}
+                                                                        className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 bg-slate-900 text-white text-sm font-medium transition-all ${currentAccent}`}
+                                                                        placeholder="0.00"
+                                                                        min="0.01"
+                                                                        required
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {returnType !== "stock_replacement_return" && (
+                                                            <div className="p-3.5 rounded-xl border flex items-center justify-between text-sm bg-rose-950/20 border-rose-900/30">
+                                                                <span className="text-slate-400">
+                                                                    Total Return Expense:
+                                                                </span>
+                                                                <span className="font-bold text-rose-400">
+                                                                    Rs. {returnTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* ══════════════════════════════════════════════════
+                                            SALE-REDUCTION RETURNS (sale_reduction / sale_reduction_expense)
+                                            ══════════════════════════════════════════════════ */}
+                                        {(returnType === "sale_reduction_return" || returnType === "sale_reduction_expense_return") && (
+                                            <div className="space-y-4">
+
+                                                {/* ── Sale Selection Table ─────────────── */}
+                                                <div>
+                                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                                        Select Sale Transaction
+                                                    </label>
+                                                    {loadingSales ? (
+                                                        <div className="flex items-center gap-2 py-3 text-slate-400 text-xs animate-pulse">
+                                                            <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                                                            Loading sales...
+                                                        </div>
+                                                    ) : allSales.length === 0 ? (
+                                                        <p className="text-xs text-slate-500 py-2">No sales found.</p>
+                                                    ) : (
+                                                        <div className="rounded-xl border border-slate-700 overflow-hidden max-h-52 overflow-y-auto">
+                                                            <table className="w-full text-xs text-left">
+                                                                <thead className="bg-slate-800/80 sticky top-0 z-10">
+                                                                    <tr className="text-slate-400 uppercase font-bold tracking-wider">
+                                                                        <th className="px-3 py-2.5 font-mono text-[10px]">Sale ID</th>
+                                                                        <th className="px-3 py-2.5">Customer</th>
+                                                                        <th className="px-3 py-2.5">Date</th>
+                                                                        <th className="px-3 py-2.5 text-right">Settled Amt</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-slate-800">
+                                                                    {allSales.map((sale) => (
+                                                                        <tr
+                                                                            key={sale.sale_id}
+                                                                            onClick={() => {
+                                                                                setSelectedSaleId(sale.sale_id);
+                                                                                fetchSaleItems(sale.sale_id);
+                                                                                setSelectedSaleItemName("");
+                                                                                setSaleReturnQuantity(0);
+                                                                                setSaleReturnPrice(0);
+                                                                            }}
+                                                                            className={`cursor-pointer transition-colors ${selectedSaleId === sale.sale_id
+                                                                                ? "bg-teal-900/30 border-l-2 border-teal-400"
+                                                                                : "hover:bg-slate-800/40"
+                                                                                }`}
+                                                                        >
+                                                                            <td className="px-3 py-2.5 font-mono text-slate-400 text-[10px]">
+                                                                                #{sale.sale_id}
+                                                                            </td>
+                                                                            <td className="px-3 py-2.5 font-semibold text-white">{sale.customer_name}</td>
+                                                                            <td className="px-3 py-2.5 text-slate-400">
+                                                                                {new Date(sale.sale_date).toLocaleDateString()}
+                                                                            </td>
+                                                                            <td className="px-3 py-2.5 text-right font-mono font-bold text-teal-400">
+                                                                                Rs.{Number(sale.grand_total).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    )}
                                                 </div>
+
+                                                {/* ── Sale Items picker ─────────────────── */}
+                                                {selectedSaleId && (
+                                                    <div className="space-y-3">
+                                                        {selectedSale && (
+                                                            <div className="px-3 py-2 bg-teal-950/20 border border-teal-900/30 rounded-lg text-xs text-teal-300 font-medium">
+                                                                Selected: Sale #{selectedSale.sale_id} — {selectedSale.customer_name}
+                                                            </div>
+                                                        )}
+
+                                                        <div>
+                                                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                                                Select Item to Return
+                                                            </label>
+                                                            {loadingSaleItems ? (
+                                                                <div className="flex items-center gap-2 py-2 text-slate-400 text-xs animate-pulse">
+                                                                    <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                                                                    Loading items...
+                                                                </div>
+                                                            ) : (
+                                                                <select
+                                                                    value={selectedSaleItemName}
+                                                                    onChange={(e) => {
+                                                                        const itemName = e.target.value;
+                                                                        setSelectedSaleItemName(itemName);
+                                                                        // Auto-fill selling price from sale item
+                                                                        const sItem = selectedSaleItems.find(i => i.product_name === itemName);
+                                                                        setSaleReturnPrice(sItem ? Number(sItem.selling_price) : 0);
+                                                                        setSaleReturnQuantity(0);
+                                                                    }}
+                                                                    className="w-full px-4 py-3 border border-teal-800/60 rounded-xl focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                                                    required
+                                                                >
+                                                                    <option value="">Choose item</option>
+                                                                    {selectedSaleItems.map((item) => (
+                                                                        <option key={item.sale_detail_id} value={item.product_name}>
+                                                                            {item.product_name} (Qty: {item.quantity}, @ Rs.{Number(item.selling_price).toFixed(2)})
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            )}
+                                                            {selectedSaleItem && (
+                                                                <p className="text-xs text-slate-400 mt-1.5">
+                                                                    Available quantity in this sale: <span className="font-bold text-white">{selectedSaleItem.quantity}</span>
+                                                                </p>
+                                                            )}
+                                                        </div>
+
+                                                        {selectedSaleItemName && (
+                                                            <div className="space-y-4">
+                                                                <div className="grid grid-cols-2 gap-4">
+                                                                    <div>
+                                                                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Return Quantity</label>
+                                                                        <input
+                                                                            type="number"
+                                                                            value={saleReturnQuantity > 0 ? saleReturnQuantity : ''}
+                                                                            onChange={(e) => setSaleReturnQuantity(Number(e.target.value))}
+                                                                            className="w-full px-4 py-3 border border-teal-800/60 rounded-xl focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                                                            placeholder="0"
+                                                                            min="1"
+                                                                            max={selectedSaleItem?.quantity ?? undefined}
+                                                                            required
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Selling Price (Rs.)</label>
+                                                                        <input
+                                                                            type="number"
+                                                                            step="0.01"
+                                                                            value={saleReturnPrice > 0 ? saleReturnPrice : ''}
+                                                                            onChange={(e) => setSaleReturnPrice(Number(e.target.value))}
+                                                                            className="w-full px-4 py-3 border border-teal-800/60 rounded-xl focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                                                            placeholder="0.00"
+                                                                            min="0.01"
+                                                                            required
+                                                                        />
+                                                                    </div>
+                                                                </div>
+
+                                                                {returnType === "sale_reduction_expense_return" && (
+                                                                    <div>
+                                                                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Expense Rate per Unit (Rs.)</label>
+                                                                        <input
+                                                                            type="number"
+                                                                            step="0.01"
+                                                                            value={saleReturnExpensePrice > 0 ? saleReturnExpensePrice : ''}
+                                                                            onChange={(e) => setSaleReturnExpensePrice(Number(e.target.value))}
+                                                                            className="w-full px-4 py-3 border border-teal-800/60 rounded-xl focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                                                            placeholder="0.00"
+                                                                            min="0.01"
+                                                                            required
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Stock-to-credit picker — only for sale_reduction_return */}
+                                                        {returnType === "sale_reduction_return" && selectedSaleItemName && (
+                                                            <div>
+                                                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                                                    Credit Stock Item (returned goods go to)
+                                                                </label>
+                                                                <select
+                                                                    value={creditStockProductId}
+                                                                    onChange={(e) => setCreditStockProductId(e.target.value)}
+                                                                    className="w-full px-4 py-3 border border-teal-800/60 rounded-xl focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                                                    required
+                                                                >
+                                                                    <option value="">Select stock to credit</option>
+                                                                    {allStockItems.map((item) => (
+                                                                        <option key={item.product_id} value={item.product_id}>
+                                                                            {item.product_name} (Current stock: {item.quantity})
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Total preview */}
+                                                        {saleReturnQuantity > 0 && (
+                                                            <div className="space-y-2">
+                                                                {saleReturnPrice > 0 && (
+                                                                    <div className={`p-3.5 rounded-xl border flex items-center justify-between text-sm ${returnType === "sale_reduction_return"
+                                                                        ? "bg-teal-950/20 border-teal-900/30"
+                                                                        : "bg-purple-950/20 border-purple-900/30"
+                                                                        }`}>
+                                                                        <span className="text-slate-400">
+                                                                            Sale Reduction Amount:
+                                                                        </span>
+                                                                        <span className={`font-bold ${returnType === "sale_reduction_return" ? "text-teal-400" : "text-purple-400"}`}>
+                                                                            Rs. {saleReturnTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                                {returnType === "sale_reduction_expense_return" && saleReturnExpensePrice > 0 && (
+                                                                    <div className="p-3.5 rounded-xl border border-rose-900/30 bg-rose-950/20 flex items-center justify-between text-sm">
+                                                                        <span className="text-slate-400">
+                                                                            Recorded Expense Amount:
+                                                                        </span>
+                                                                        <span className="font-bold text-rose-400">
+                                                                            Rs. {saleReturnExpenseTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
                                 )}
                             </div>
 
-                            {requiresQuantity ? (
+                            {/* Normal Expense: Quantity + Amount (for quantity-based items) */}
+                            {requiresQuantity && expenseName !== "Return" ? (
                                 <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-                                                Quantity
-                                            </label>
+                                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Quantity</label>
                                             <input
                                                 type="number"
                                                 value={quantityPerProduct > 0 ? quantityPerProduct : ''}
@@ -426,9 +970,7 @@ export default function ExpensesPage() {
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-                                                Rate per Item
-                                            </label>
+                                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Rate per Item</label>
                                             <input
                                                 type="number"
                                                 step="0.01"
@@ -449,7 +991,7 @@ export default function ExpensesPage() {
                                     </div>
                                 </div>
                             ) : (
-                                expenseName !== "" && expenseName !== "Salary" && expenseName !== "Return" && (
+                                expenseName !== "" && expenseName !== "Salary" && expenseName !== "Return" && !requiresQuantity && (
                                     <div>
                                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
                                             Expense Amount (Rs.)
@@ -468,13 +1010,12 @@ export default function ExpensesPage() {
                                 )
                             )}
 
-                            {expenseName === "Salary" || expenseName === "Salary Advance" || expenseName === "Salary Loan" ? (
+                            {/* Salary picker */}
+                            {(expenseName === "Salary" || expenseName === "Salary Advance" || expenseName === "Salary Loan") && (
                                 <div>
                                     <select
                                         value={employeeName}
-                                        onChange={(e) => {
-                                            setEmployeeName(e.target.value);
-                                        }}
+                                        onChange={(e) => setEmployeeName(e.target.value)}
                                         className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                                         required
                                     >
@@ -485,7 +1026,7 @@ export default function ExpensesPage() {
                                             </option>
                                         ))}
                                     </select>
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 mt-3">
                                         Expense Amount (Rs.)
                                     </label>
                                     <input
@@ -499,8 +1040,9 @@ export default function ExpensesPage() {
                                         required
                                     />
                                 </div>
-                            ) : (<></>)}
+                            )}
 
+                            {/* Submit button */}
                             <div className="pt-2">
                                 {expenseName === "" ? (
                                     <p className="text-xs font-semibold text-center text-slate-400 dark:text-slate-500">
@@ -525,7 +1067,11 @@ export default function ExpensesPage() {
                                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                                                 </svg>
-                                                <span>Post Expenditure Entry</span>
+                                                <span>
+                                                    {expenseName === "Return"
+                                                        ? returnType ? `Submit ${returnTypeLabel[returnType] ?? "Return"}` : "Submit Return"
+                                                        : "Post Expenditure Entry"}
+                                                </span>
                                             </>
                                         )}
                                     </button>
@@ -550,7 +1096,7 @@ export default function ExpensesPage() {
                             </div>
                         </div>
 
-                        {/* Recent Table list */}
+                        {/* Recent Table */}
                         <div className="glass-card rounded-2xl overflow-hidden">
                             <div className="px-6 py-4.5 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
                                 <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

@@ -67,3 +67,22 @@ export const employees = mysqlTable('employees', {
     employee_contact_no: varchar('employee_contact_no', { length: 255 }).notNull(),
     maritial_status: varchar('maritial_status', { length: 255 }).notNull(),
 })
+
+// Tracks all return transactions regardless of type
+export const returns = mysqlTable('returns', {
+    return_id:       serial('return_id').primaryKey(),
+    // One of: stock_expense_return | stock_replacement_return | sale_reduction_return | sale_reduction_expense_return
+    return_type:     varchar('return_type', { length: 100 }).notNull(),
+    product_name:    varchar('product_name', { length: 255 }).notNull(),
+    quantity:        double('quantity', { precision: 10, scale: 2 }).notNull(),
+    per_unit_amount: double('per_unit_amount', { precision: 10, scale: 2 }).notNull(),
+    total:           double('total', { precision: 10, scale: 2 }).notNull(),
+    // Set when stock is credited back (stock_expense_return, stock_replacement_return, sale_reduction_return)
+    stock_id:        int('stock_id'),
+    // Set for sale-reduction return types
+    sale_id:         int('sale_id'),
+    // Set when an expense entry is created (stock_expense_return, sale_reduction_expense_return)
+    expense_item_id: int('expense_item_id'),
+    return_date:     date('return_date').notNull(),
+    created_at:      timestamp('created_at').defaultNow(),
+})
