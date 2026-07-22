@@ -54,7 +54,6 @@ interface SaleItem {
 type ReturnType =
     | ""
     | "stock_expense_return"
-    | "stock_replacement_return"
     | "sale_reduction_return"
     | "sale_reduction_expense_return";
 
@@ -300,52 +299,6 @@ export default function ExpensesPage() {
                 return;
             }
 
-            // ── stock_replacement_return ──────────────────────────────────────
-            if (returnType === "stock_replacement_return") {
-                if (!expenseDate || !selectedReturnProductId || returnQuantity <= 0) {
-                    showAlert('warning', 'Missing Fields', 'Please fill in all required fields with positive values.');
-                    return;
-                }
-                if (selectedReturnProduct && returnQuantity > selectedReturnProduct.quantity) {
-                    showAlert('warning', 'Insufficient Stock', `Cannot return more than current stock (${selectedReturnProduct.quantity} units).`);
-                    return;
-                }
-
-                setIsSubmitting(true);
-                setLoadingRecent(true);
-                try {
-                    const res = await fetch("/api/expenses/save-return-expenses", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            return_type: "stock_replacement_return",
-                            product_id: Number(selectedReturnProductId),
-                            product_name: selectedReturnProduct?.product_name ?? "",
-                            quantity: returnQuantity,
-                            per_unit_amount: 0,
-                            total: 0,
-                            expense_date: expenseDate,
-                        }),
-                    });
-                    const result = await res.json();
-                    if (res.ok && result.success) {
-                        await fetchRecentExpenses();
-                        await fetchStockItems();
-                        setExpenseName("");
-                        resetReturnFields();
-                        showAlert('success', 'Return Processed', `Stock Replacement Return for "${selectedReturnProduct?.product_name}" recorded. No expense created.`);
-                    } else {
-                        showAlert('error', 'Return Failed', result.message || 'Failed to process the return.');
-                        setLoadingRecent(false);
-                    }
-                } catch {
-                    showAlert('error', 'Network Error', 'A network error occurred. Please try again.');
-                    setLoadingRecent(false);
-                } finally {
-                    setIsSubmitting(false);
-                }
-                return;
-            }
 
             // ── sale_reduction_return ─────────────────────────────────────────
             if (returnType === "sale_reduction_return") {
@@ -492,7 +445,6 @@ export default function ExpensesPage() {
     // ─── Return type label helper ─────────────────────────────────────────────
     const returnTypeLabel: Record<string, string> = {
         stock_expense_return: "Stock Expense Return",
-        stock_replacement_return: "Stock Replacement Return",
         sale_reduction_return: "Sale Reduction Return",
         sale_reduction_expense_return: "Sale Reduction Expense Return",
     };
@@ -500,13 +452,11 @@ export default function ExpensesPage() {
     // ── Badge color per return type ───────────────────────────────────────────
     const returnTypeBadgeClass: Record<string, string> = {
         stock_expense_return: "bg-rose-950/30 border-rose-800/40 text-rose-400",
-        stock_replacement_return: "bg-amber-950/30 border-amber-800/40 text-amber-400",
         sale_reduction_return: "bg-teal-950/30 border-teal-800/40 text-teal-400",
         sale_reduction_expense_return: "bg-purple-950/30 border-purple-800/40 text-purple-400",
     };
     const returnTypeAccent: Record<string, string> = {
         stock_expense_return: "border-rose-800/60 focus:border-rose-500 focus:ring-rose-900/30",
-        stock_replacement_return: "border-amber-800/60 focus:border-amber-500 focus:ring-amber-900/30",
         sale_reduction_return: "border-teal-800/60 focus:border-teal-500 focus:ring-teal-900/30",
         sale_reduction_expense_return: "border-purple-800/60 focus:border-purple-500 focus:ring-purple-900/30",
     };
@@ -624,7 +574,6 @@ export default function ExpensesPage() {
                                             >
                                                 <option value="">Choose return type</option>
                                                 <option value="stock_expense_return">Stock Expense Return</option>
-                                                <option value="stock_replacement_return">Stock Replacement Return</option>
                                                 <option value="sale_reduction_return">Sale Reduction Return</option>
                                                 <option value="sale_reduction_expense_return">Sale Reduction Expense Return</option>
                                             </select>
@@ -634,16 +583,15 @@ export default function ExpensesPage() {
                                         {returnType && (
                                             <div className={`px-4 py-2.5 rounded-xl border text-xs font-semibold ${returnTypeBadgeClass[returnType]}`}>
                                                 {returnType === "stock_expense_return" && "📦 Stock will be reduced and an expense entry will be recorded."}
-                                                {returnType === "stock_replacement_return" && "🔄 Stock will be reduced. No expense will be recorded."}
                                                 {returnType === "sale_reduction_return" && "🛒 Sale amount will be reduced and returned goods added back to stock."}
                                                 {returnType === "sale_reduction_expense_return" && "⚠️ Sale amount will be reduced and goods written off as an expense. No stock credit."}
                                             </div>
                                         )}
 
                                         {/* ══════════════════════════════════════════════════
-                                            STOCK-BASED RETURNS (stock_expense / stock_replacement)
+                                            STOCK-BASED RETURN (stock_expense_return)
                                             ══════════════════════════════════════════════════ */}
-                                        {(returnType === "stock_expense_return" || returnType === "stock_replacement_return") && (
+                                        {returnType === "stock_expense_return" && (
                                             <div className="space-y-3">
                                                 {/* Product picker */}
                                                 <div>
@@ -676,7 +624,7 @@ export default function ExpensesPage() {
 
                                                 {selectedReturnProductId !== "" && (
                                                     <div className="space-y-3">
-                                                        {returnType === "stock_replacement_return" ? (
+                                                        <div className="grid grid-cols-2 gap-4">
                                                             <div>
                                                                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Quantity</label>
                                                                 <input
@@ -690,47 +638,29 @@ export default function ExpensesPage() {
                                                                     required
                                                                 />
                                                             </div>
-                                                        ) : (
-                                                            <div className="grid grid-cols-2 gap-4">
-                                                                <div>
-                                                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Quantity</label>
-                                                                    <input
-                                                                        type="number"
-                                                                        value={returnQuantity > 0 ? returnQuantity : ''}
-                                                                        onChange={(e) => setReturnQuantity(Number(e.target.value))}
-                                                                        className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 bg-slate-900 text-white text-sm font-medium transition-all ${currentAccent}`}
-                                                                        placeholder="0"
-                                                                        min="1"
-                                                                        max={selectedReturnProduct?.quantity ?? undefined}
-                                                                        required
-                                                                    />
-                                                                </div>
-                                                                <div>
-                                                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Amount per Unit (Rs.)</label>
-                                                                    <input
-                                                                        type="number"
-                                                                        step="0.01"
-                                                                        value={returnAmount > 0 ? returnAmount : ''}
-                                                                        onChange={(e) => setReturnAmount(Number(e.target.value))}
-                                                                        className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 bg-slate-900 text-white text-sm font-medium transition-all ${currentAccent}`}
-                                                                        placeholder="0.00"
-                                                                        min="0.01"
-                                                                        required
-                                                                    />
-                                                                </div>
+                                                            <div>
+                                                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Amount per Unit (Rs.)</label>
+                                                                <input
+                                                                    type="number"
+                                                                    step="0.01"
+                                                                    value={returnAmount > 0 ? returnAmount : ''}
+                                                                    onChange={(e) => setReturnAmount(Number(e.target.value))}
+                                                                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 bg-slate-900 text-white text-sm font-medium transition-all ${currentAccent}`}
+                                                                    placeholder="0.00"
+                                                                    min="0.01"
+                                                                    required
+                                                                />
                                                             </div>
-                                                        )}
+                                                        </div>
 
-                                                        {returnType !== "stock_replacement_return" && (
-                                                            <div className="p-3.5 rounded-xl border flex items-center justify-between text-sm bg-rose-950/20 border-rose-900/30">
-                                                                <span className="text-slate-400">
-                                                                    Total Return Expense:
-                                                                </span>
-                                                                <span className="font-bold text-rose-400">
-                                                                    Rs. {returnTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                                                </span>
-                                                            </div>
-                                                        )}
+                                                        <div className="p-3.5 rounded-xl border flex items-center justify-between text-sm bg-rose-950/20 border-rose-900/30">
+                                                            <span className="text-slate-400">
+                                                                Total Return Expense:
+                                                            </span>
+                                                            <span className="font-bold text-rose-400">
+                                                                Rs. {returnTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>

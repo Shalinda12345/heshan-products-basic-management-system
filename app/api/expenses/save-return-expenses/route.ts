@@ -8,7 +8,6 @@ import { eq, sql } from "drizzle-orm";
 // ─────────────────────────────────────────────────────────
 const RETURN_TYPES = [
     "stock_expense_return",
-    "stock_replacement_return",
     "sale_reduction_return",
     "sale_reduction_expense_return",
 ] as const;
@@ -23,7 +22,7 @@ export async function POST(request: Request) {
         const body = await request.json();
         const {
             return_type,
-            // For stock-based returns (stock_expense_return, stock_replacement_return, sale_reduction_return)
+            // For stock-based returns (stock_expense_return, sale_reduction_return)
             product_id,
             product_name,
             quantity,
@@ -121,56 +120,6 @@ export async function POST(request: Request) {
             );
         }
 
-        // ────────────────────────────────────────────────────────────────────
-        // CASE 2: stock_replacement_return
-        //   - Reduce stock quantity only (no expense recorded)
-        //   - Insert returns record
-        // ────────────────────────────────────────────────────────────────────
-        if (return_type === "stock_replacement_return") {
-            if (!product_id || !product_name || !quantity || quantity <= 0) {
-                return NextResponse.json(
-                    { success: false, message: "product_id, product_name, and quantity are required for Stock Replacement Return." },
-                    { status: 400 }
-                );
-            }
-
-            const result = await db.transaction(async (tx) => {
-                // Validate stock availability
-                const [currentStock] = await tx
-                    .select()
-                    .from(stocks)
-                    .where(eq(stocks.product_id, Number(product_id)));
-
-                if (!currentStock) throw new Error(`No stock record found for product ID ${product_id}.`);
-                if (Number(currentStock.quantity) < Number(quantity)) {
-                    throw new Error(`Insufficient stock. Available: ${currentStock.quantity}, requested: ${quantity}.`);
-                }
-
-                // Deduct stock — no expense entry
-                await tx
-                    .update(stocks)
-                    .set({ quantity: sql`${stocks.quantity} - ${Number(quantity)}` })
-                    .where(eq(stocks.product_id, Number(product_id)));
-
-                // Insert return record (per_unit_amount and total are 0 for replacement)
-                await tx.insert(returns).values({
-                    return_type: "stock_replacement_return",
-                    product_name,
-                    quantity: Number(quantity),
-                    per_unit_amount: 0,
-                    total: 0,
-                    stock_id: Number(currentStock.stock_id),
-                    return_date: parsedDate,
-                });
-
-                return { stock_id: currentStock.stock_id };
-            });
-
-            return NextResponse.json(
-                { success: true, message: "Stock Replacement Return processed. Stock reduced, no expense recorded.", ...result },
-                { status: 201 }
-            );
-        }
 
         // ────────────────────────────────────────────────────────────────────
         // CASE 3: sale_reduction_return
