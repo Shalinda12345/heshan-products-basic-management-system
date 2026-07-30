@@ -29,7 +29,7 @@ export async function GET() {
 
         return NextResponse.json(monthlyExpenses);
     } catch (error) {
-        console.error("Failed to fetch monthly sales: ", error);
+        console.error("Failed to fetch monthly expenses: ", error);
         return NextResponse.json(
             { error: "Internal Server Error" },
             { status: 500 }

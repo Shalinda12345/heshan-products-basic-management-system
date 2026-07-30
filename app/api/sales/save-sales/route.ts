@@ -14,12 +14,13 @@ export async function POST(request: Request){
         }, { status: 201 });
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        console.error("Failed to fetch monthly expenses: ", errorMessage);
+        console.error("Failed to save sales: ", errorMessage);
         
         return NextResponse.json(
-            { error: "Internal Server Error" },
-            { status: 500 }
+            { success: false, message: errorMessage, error: errorMessage },
+            { status: 400 }
         );
     }
 }
+
 

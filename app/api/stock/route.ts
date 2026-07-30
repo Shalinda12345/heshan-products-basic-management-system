@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/app/db";
 import { products, stocks } from "@/app/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
     try {
@@ -42,6 +44,18 @@ export async function POST(request: Request) {
             );
         }
 
+        // Verify product exists in products table
+        const [existingProduct] = await db.select()
+            .from(products)
+            .where(eq(products.product_id, Number(product_id)));
+
+        if (!existingProduct) {
+            return NextResponse.json(
+                { error: `Product ID ${product_id} not found.` },
+                { status: 404 }
+            );
+        }
+
         const result = await db.transaction(async (tx) => {
             // Check if stock record already exists for the product
             const [existingStock] = await tx.select()
@@ -49,12 +63,11 @@ export async function POST(request: Request) {
                 .where(eq(stocks.product_id, Number(product_id)));
 
             if (existingStock) {
-                // Update quantity
-                const newQty = Number(existingStock.quantity) + Number(quantity);
+                // Atomically add quantity using SQL to prevent race conditions
                 await tx.update(stocks)
-                    .set({ quantity: newQty })
+                    .set({ quantity: sql`${stocks.quantity} + ${Number(quantity)}` })
                     .where(eq(stocks.product_id, Number(product_id)));
-                return { product_id, quantity: newQty };
+                return { product_id, quantity: Number(existingStock.quantity) + Number(quantity) };
             } else {
                 // Insert a new stock record
                 await tx.insert(stocks).values({
@@ -69,6 +82,7 @@ export async function POST(request: Request) {
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
         console.error("Failed to add stock: ", errorMessage);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: errorMessage || "Internal Server Error" }, { status: 500 });
     }
 }
+

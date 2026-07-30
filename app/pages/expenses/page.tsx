@@ -314,6 +314,20 @@ export default function ExpensesPage() {
                 setIsSubmitting(true);
                 setLoadingRecent(true);
                 try {
+                    // Re-fetch sale items to validate against latest DB state (prevents double-returns)
+                    const freshItemsRes = await fetch(`/api/sales/get-sale-items?sale_id=${selectedSaleId}`, { cache: "no-store" });
+                    if (freshItemsRes.ok) {
+                        const freshItems: SaleItem[] = await freshItemsRes.json();
+                        const freshItem = freshItems.find(i => i.product_name === selectedSaleItemName);
+                        if (freshItem && saleReturnQuantity > Number(freshItem.quantity)) {
+                            showAlert('warning', 'Quantity Exceeded', `Current available quantity is only ${freshItem.quantity} units (may have changed since you loaded the page).`);
+                            setSelectedSaleItems(freshItems);
+                            setIsSubmitting(false);
+                            setLoadingRecent(false);
+                            return;
+                        }
+                    }
+
                     const res = await fetch("/api/expenses/save-return-expenses", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -363,6 +377,20 @@ export default function ExpensesPage() {
                 setIsSubmitting(true);
                 setLoadingRecent(true);
                 try {
+                    // Re-fetch sale items to validate against latest DB state (prevents double-returns)
+                    const freshItemsRes = await fetch(`/api/sales/get-sale-items?sale_id=${selectedSaleId}`, { cache: "no-store" });
+                    if (freshItemsRes.ok) {
+                        const freshItems: SaleItem[] = await freshItemsRes.json();
+                        const freshItem = freshItems.find(i => i.product_name === selectedSaleItemName);
+                        if (freshItem && saleReturnQuantity > Number(freshItem.quantity)) {
+                            showAlert('warning', 'Quantity Exceeded', `Current available quantity is only ${freshItem.quantity} units (may have changed since you loaded the page).`);
+                            setSelectedSaleItems(freshItems);
+                            setIsSubmitting(false);
+                            setLoadingRecent(false);
+                            return;
+                        }
+                    }
+
                     const res = await fetch("/api/expenses/save-return-expenses", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
