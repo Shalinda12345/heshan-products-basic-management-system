@@ -197,6 +197,9 @@ export default function SalesPage() {
         setSaleItems([]);
         setCustomerName("");
         setSaleDate("");
+
+        // Re-fetch stock to ensure next sale checks against accurate quantities
+        await fetchStock();
       } else {
         showAlert('error', 'Save Failed', result.message || 'Failed to save data to the database.');
       }

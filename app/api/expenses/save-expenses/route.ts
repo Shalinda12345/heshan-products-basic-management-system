@@ -9,16 +9,16 @@ export async function POST(request:Request) {
 
         return NextResponse.json({
             success: true,
-            message: "Invoice saved successfully!",
+            message: "Expense saved successfully!",
             expense_item_id: result.expense_item_id
         }, { status: 201 });
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        console.error("Failed to fetch monthly expenses: ", errorMessage);
+        console.error("Failed to save expenses: ", errorMessage);
         
         return NextResponse.json(
-            { error: "Internal Server Error" },
-            { status: 500 }
+            { success: false, message: errorMessage, error: errorMessage },
+            { status: 400 }
         );
     }
 }

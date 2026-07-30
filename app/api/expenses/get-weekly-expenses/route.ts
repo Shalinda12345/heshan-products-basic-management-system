@@ -16,7 +16,8 @@ export async function GET() {
         startOfWeek.setDate(now.getDate() - daysToSubtract);
         startOfWeek.setHours(0, 0, 0, 0);
 
-        const endOfWeek = new Date(now);
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
         endOfWeek.setHours(23, 59, 59, 999); 
 
         const weeklyExpenses = await db
@@ -28,12 +29,11 @@ export async function GET() {
                     lte(expenses.expense_date, endOfWeek)
                 )
             )
-            // 2. Add the orderBy clause here (e.g., sorting by sale_date descending)
             .orderBy(desc(expenses.expense_date)); 
 
         return NextResponse.json(weeklyExpenses);
     } catch (error) {
-        console.error("Failed to fetch weekly sales: ", error);
+        console.error("Failed to fetch weekly expenses: ", error);
         return NextResponse.json(
             { error: "Internal Server Error" },
             { status: 500 }

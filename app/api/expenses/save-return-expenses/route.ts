@@ -3,6 +3,8 @@ import { db } from "@/app/db";
 import { expenses, stocks, sales, sale_items, returns } from "@/app/db/schema";
 import { eq, sql } from "drizzle-orm";
 
+export const dynamic = "force-dynamic";
+
 // ─────────────────────────────────────────────────────────
 // Return type constants
 // ─────────────────────────────────────────────────────────
@@ -13,6 +15,15 @@ const RETURN_TYPES = [
 ] as const;
 
 type ReturnType = (typeof RETURN_TYPES)[number];
+
+function parseLocalDate(dateStr: string): Date {
+    if (!dateStr) return new Date();
+    const parts = dateStr.split("T")[0].split("-");
+    if (parts.length === 3) {
+        return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    }
+    return new Date(dateStr);
+}
 
 // ─────────────────────────────────────────────────────────
 // POST /api/expenses/save-return-expenses
@@ -54,7 +65,7 @@ export async function POST(request: Request) {
             );
         }
 
-        const parsedDate = new Date(expense_date);
+        const parsedDate = parseLocalDate(expense_date);
 
         // ────────────────────────────────────────────────────────────────────
         // CASE 1: stock_expense_return
@@ -63,12 +74,14 @@ export async function POST(request: Request) {
         //   - Insert returns record
         // ────────────────────────────────────────────────────────────────────
         if (return_type === "stock_expense_return") {
-            if (!product_id || !product_name || !quantity || quantity <= 0 || per_unit_amount <= 0) {
+            if (!product_id || !product_name || !quantity || Number(quantity) <= 0 || Number(per_unit_amount) <= 0) {
                 return NextResponse.json(
                     { success: false, message: "product_id, product_name, quantity, and per_unit_amount are required for Stock Expense Return." },
                     { status: 400 }
                 );
             }
+
+            const returnTotal = total !== undefined && total !== null ? Number(total) : Number(quantity) * Number(per_unit_amount);
 
             const result = await db.transaction(async (tx) => {
                 // Validate stock availability
@@ -93,7 +106,7 @@ export async function POST(request: Request) {
                     expense_name: `Stock Expense Return: ${product_name}`,
                     quantity: Number(quantity),
                     per_expense_amount: Number(per_unit_amount),
-                    total: Number(total),
+                    total: Number(returnTotal),
                     expense_date: parsedDate,
                 });
 
@@ -105,7 +118,7 @@ export async function POST(request: Request) {
                     product_name,
                     quantity: Number(quantity),
                     per_unit_amount: Number(per_unit_amount),
-                    total: Number(total),
+                    total: Number(returnTotal),
                     stock_id: Number(currentStock.stock_id),
                     expense_item_id: Number(newExpenseId),
                     return_date: parsedDate,
@@ -129,7 +142,7 @@ export async function POST(request: Request) {
         //   - Insert returns record
         // ────────────────────────────────────────────────────────────────────
         if (return_type === "sale_reduction_return") {
-            if (!sale_id || !sale_product_name || !sale_quantity || sale_quantity <= 0 || sale_per_unit_amount <= 0) {
+            if (!sale_id || !sale_product_name || !sale_quantity || Number(sale_quantity) <= 0 || Number(sale_per_unit_amount) <= 0) {
                 return NextResponse.json(
                     { success: false, message: "sale_id, sale_product_name, sale_quantity, and sale_per_unit_amount are required for Sale Reduction Return." },
                     { status: 400 }
@@ -156,7 +169,6 @@ export async function POST(request: Request) {
                     .select()
                     .from(sale_items)
                     .where(eq(sale_items.sale_id, Number(sale_id)))
-                    // Match by product name within this sale
                     .then((rows) => rows.filter((r) => r.product_name === sale_product_name));
 
                 if (!saleItem) throw new Error(`No sale item matching "${sale_product_name}" found in Sale #${sale_id}.`);
@@ -167,21 +179,27 @@ export async function POST(request: Request) {
                     throw new Error(`Cannot return ${returnQty} units — only ${existingQty} were sold in this transaction.`);
                 }
 
-                const returnLineTotal = Number(sale_total);
+                const returnLineTotal = sale_total !== undefined && sale_total !== null
+                    ? Number(sale_total)
+                    : Number(returnQty) * Number(sale_per_unit_amount);
+
+                const newSaleItemQty = Math.max(0, existingQty - returnQty);
+                const newSaleItemTotal = Math.max(0, parseFloat((Number(saleItem.total) - returnLineTotal).toFixed(2)));
+                const newGrandTotal = Math.max(0, parseFloat((Number(currentSale.grand_total) - returnLineTotal).toFixed(2)));
 
                 // Reduce sale_items quantity and total
                 await tx
                     .update(sale_items)
                     .set({
-                        quantity: sql`${sale_items.quantity} - ${returnQty}`,
-                        total: sql`${sale_items.total} - ${returnLineTotal}`,
+                        quantity: newSaleItemQty,
+                        total: newSaleItemTotal,
                     })
                     .where(eq(sale_items.sale_detail_id, saleItem.sale_detail_id));
 
                 // Reduce sales grand_total
                 await tx
                     .update(sales)
-                    .set({ grand_total: sql`${sales.grand_total} - ${returnLineTotal}` })
+                    .set({ grand_total: newGrandTotal })
                     .where(eq(sales.sale_id, Number(sale_id)));
 
                 // Add returned qty BACK to selected stock
@@ -226,7 +244,7 @@ export async function POST(request: Request) {
         //   - Insert returns record
         // ────────────────────────────────────────────────────────────────────
         if (return_type === "sale_reduction_expense_return") {
-            if (!sale_id || !sale_product_name || !sale_quantity || sale_quantity <= 0 || sale_per_unit_amount <= 0 || !expense_per_unit_amount || expense_per_unit_amount <= 0) {
+            if (!sale_id || !sale_product_name || !sale_quantity || Number(sale_quantity) <= 0 || Number(sale_per_unit_amount) <= 0 || !expense_per_unit_amount || Number(expense_per_unit_amount) <= 0) {
                 return NextResponse.json(
                     { success: false, message: "sale_id, sale_product_name, sale_quantity, sale_per_unit_amount, and expense_per_unit_amount are required for Sale Reduction Expense Return." },
                     { status: 400 }
@@ -257,21 +275,31 @@ export async function POST(request: Request) {
                     throw new Error(`Cannot return ${returnQty} units — only ${existingQty} were sold in this transaction.`);
                 }
 
-                const returnLineTotal = Number(sale_total);
+                const returnLineTotal = sale_total !== undefined && sale_total !== null
+                    ? Number(sale_total)
+                    : Number(returnQty) * Number(sale_per_unit_amount);
+
+                const calculatedExpenseTotal = expense_total !== undefined && expense_total !== null
+                    ? Number(expense_total)
+                    : Number(returnQty) * Number(expense_per_unit_amount);
+
+                const newSaleItemQty = Math.max(0, existingQty - returnQty);
+                const newSaleItemTotal = Math.max(0, parseFloat((Number(saleItem.total) - returnLineTotal).toFixed(2)));
+                const newGrandTotal = Math.max(0, parseFloat((Number(currentSale.grand_total) - returnLineTotal).toFixed(2)));
 
                 // Reduce sale_items quantity and total
                 await tx
                     .update(sale_items)
                     .set({
-                        quantity: sql`${sale_items.quantity} - ${returnQty}`,
-                        total: sql`${sale_items.total} - ${returnLineTotal}`,
+                        quantity: newSaleItemQty,
+                        total: newSaleItemTotal,
                     })
                     .where(eq(sale_items.sale_detail_id, saleItem.sale_detail_id));
 
                 // Reduce sales grand_total
                 await tx
                     .update(sales)
-                    .set({ grand_total: sql`${sales.grand_total} - ${returnLineTotal}` })
+                    .set({ grand_total: newGrandTotal })
                     .where(eq(sales.sale_id, Number(sale_id)));
 
                 // Record expense — goods written off using the custom expense rate
@@ -279,7 +307,7 @@ export async function POST(request: Request) {
                     expense_name: `Sale Reduction Expense Return: ${sale_product_name}`,
                     quantity: returnQty,
                     per_expense_amount: Number(expense_per_unit_amount),
-                    total: Number(expense_total),
+                    total: Number(calculatedExpenseTotal),
                     expense_date: parsedDate,
                 });
 

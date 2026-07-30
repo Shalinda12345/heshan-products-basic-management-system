@@ -16,7 +16,8 @@ export async function GET() {
         startOfWeek.setDate(now.getDate() - daysToSubtract);
         startOfWeek.setHours(0, 0, 0, 0);
 
-        const endOfWeek = new Date(now);
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
         endOfWeek.setHours(23, 59, 59, 999); 
 
         const weeklySales = await db
