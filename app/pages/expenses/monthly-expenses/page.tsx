@@ -1,6 +1,7 @@
 "use client";
 
 import ExpensesNavigation from "@/app/components/expenses/expenses-navigation/page"
+import MonthSelector, { MONTH_NAMES } from "@/app/components/ui/month-selector";
 import { useEffect, useState } from "react";
 
 interface Expense {
@@ -13,14 +14,17 @@ interface Expense {
 }
 
 export default function MonthlyExpenses() {
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
     const [monthlyExpenses, setMonthlyExpenses] = useState<Expense[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [searchQuery, setSearchQuery] = useState("");
 
     useEffect(() => {
         async function fetchMonthlyExpenses() {
+            setLoading(true);
             try {
-                const response = await fetch("/api/expenses/get-monthly-expenses", { cache: 'no-store'});
+                const response = await fetch(`/api/expenses/get-monthly-expenses?year=${selectedYear}&month=${selectedMonth}`, { cache: 'no-store'});
                 if (!response.ok) throw new Error("Network response was not ok");
                 const data = await response.json();
                 setMonthlyExpenses(data);
@@ -31,7 +35,7 @@ export default function MonthlyExpenses() {
             }
         }
         fetchMonthlyExpenses();
-    }, []);
+    }, [selectedYear, selectedMonth]);
 
     const filteredExpenses = monthlyExpenses.filter(expense => 
         expense.expense_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -50,19 +54,33 @@ export default function MonthlyExpenses() {
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between section-divider pb-6 gap-4">
                     <div>
                         <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Monthly Fiscal Audits</h1>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">High-level visibility into cumulative expenditure metrics for the current calendar period.</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                            High-level visibility into cumulative expenditure metrics for <span className="font-semibold text-rose-400">{MONTH_NAMES[selectedMonth - 1]} {selectedYear}</span>.
+                        </p>
                     </div>
+
+                    <div className="flex flex-wrap items-center gap-4">
+                        {/* Month & Year Selector */}
+                        <MonthSelector
+                            selectedYear={selectedYear}
+                            selectedMonth={selectedMonth}
+                            onChange={(yr, mo) => {
+                                setSelectedYear(yr);
+                                setSelectedMonth(mo);
+                            }}
+                        />
                   
-                    {/* Executive Summary Widget */}
-                    <div className="glass-card-sm rounded-2xl p-5 flex items-center gap-4 min-w-[280px]">
-                        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 text-2xl">
-                            💼
-                        </div>
-                        <div>
-                            <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Monthly Total</p>
-                            <p className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1">
-                                Rs.{totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </p>
+                        {/* Executive Summary Widget */}
+                        <div className="glass-card-sm rounded-2xl p-5 flex items-center gap-4 min-w-[240px]">
+                            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 text-2xl">
+                                💼
+                            </div>
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Monthly Total</p>
+                                <p className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1">
+                                    Rs.{totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
