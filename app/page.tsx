@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
+import MonthSelector, { MONTH_NAMES } from '@/app/components/ui/month-selector';
 import {
     AreaChart, Area, BarChart, Bar, LineChart, Line,
     PieChart, Pie, Cell,
@@ -215,6 +216,8 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle?: st
 export default function Home() {
     const [period, setPeriod]       = useState('month');
     const [years, setYears]         = useState(2);
+    const [selectedYear, setSelectedYear]   = useState(new Date().getFullYear());
+    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
     const [data, setData]           = useState<DashboardData | null>(null);
     const [loading, setLoading]     = useState(true);
     const [lastUpdated, setLastUpdated] = useState('');
@@ -223,28 +226,20 @@ export default function Home() {
 
     useEffect(() => {
         const controller = new AbortController();
-        // THE ROOT CAUSE FIX:
-        // Declare local `cancelled` variable so it is scoped to this specific effect execution.
-        // Without `let`, this variable becomes a shared global (or throws a ReferenceError in strict mode),
-        // which breaks state updates when switching periods.
         let cancelled = false;
 
         const run = async () => {
-            // FIX: Do NOT clear data here. Keeping the previous period's values
-            // means KPI cards animate directly old→new instead of old→0→new,
-            // which was the visible "shuffling" effect. The loading shimmer on
-            // the KPI cards signals to the user that values are being updated.
             setLoading(true);
             try {
                 const p  = period === 'multi' ? 'multi' : period;
                 const yr = period === 'multi' ? years : 1;
+                const monthParam = period === 'month' ? `&year=${selectedYear}&month=${selectedMonth}` : '';
                 const res = await fetch(
-                    `/api/dashboard/summary?period=${p}&years=${yr}&_t=${Date.now()}`,
+                    `/api/dashboard/summary?period=${p}&years=${yr}${monthParam}&_t=${Date.now()}`,
                     { signal: controller.signal, cache: 'no-store' }
                 );
                 if (!res.ok) throw new Error(`API returned ${res.status}`);
                 const json = await res.json();
-                // Guard: only write state if this effect is still the active one
                 if (!cancelled) {
                     setData(json);
                     setLastUpdated(new Date().toLocaleTimeString());
@@ -254,8 +249,6 @@ export default function Home() {
                     console.error('Dashboard fetch failed:', e);
                 }
             } finally {
-                // Guard: do NOT call setLoading(false) if a newer effect has
-                // already taken ownership — this is what caused the shuffling.
                 if (!cancelled) {
                     setLoading(false);
                 }
@@ -265,11 +258,11 @@ export default function Home() {
         run();
 
         return () => {
-            cancelled = true;   // prevent stale state writes from this effect
-            controller.abort(); // cancel the in-flight request
+            cancelled = true;
+            controller.abort();
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [period, years, refreshTick]);
+    }, [period, years, selectedYear, selectedMonth, refreshTick]);
 
     // Current date header
     const today = new Date();
@@ -356,6 +349,18 @@ export default function Home() {
                         </button>
                     ))}
 
+                    {/* Month selector when Month period is active */}
+                    {period === 'month' && (
+                        <MonthSelector
+                            selectedYear={selectedYear}
+                            selectedMonth={selectedMonth}
+                            onChange={(yr, mo) => {
+                                setSelectedYear(yr);
+                                setSelectedMonth(mo);
+                            }}
+                        />
+                    )}
+
                     {/* Multi-year input */}
                     {period === 'multi' && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: '6px 16px' }}>
@@ -383,7 +388,7 @@ export default function Home() {
 
                 {/* ═══ Net Profit Chart (full width) ══════════════════════════ */}
                 <div style={{ marginBottom: 28 }}>
-                    <ChartCard title="Net Profit Overview" subtitle={`Profit/loss trend — ${PERIODS.find(p => p.key === period)?.label}${period === 'multi' ? ` (${years} years)` : ''}`}>
+                    <ChartCard title="Net Profit Overview" subtitle={`Profit/loss trend — ${period === 'month' ? `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}` : PERIODS.find(p => p.key === period)?.label}${period === 'multi' ? ` (${years} years)` : ''}`}>
                         {loading ? <LoadingSkeleton height={300} /> : (
                             <ResponsiveContainer width="100%" height={300}>
                                 <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>

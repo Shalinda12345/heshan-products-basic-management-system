@@ -18,7 +18,7 @@ function endOfDay(d: Date) {
 }
 
 // Returns [start, end] dates based on the requested period
-function getDateRange(period: string, years: number): [Date, Date] {
+function getDateRange(period: string, years: number, selectedYear?: number, selectedMonth?: number): [Date, Date] {
     const now = new Date();
 
     if (period === "day") {
@@ -34,21 +34,25 @@ function getDateRange(period: string, years: number): [Date, Date] {
     }
 
     if (period === "month") {
-        const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        const yr = selectedYear ?? now.getFullYear();
+        const mo = selectedMonth ? selectedMonth - 1 : now.getMonth();
+        const start = new Date(yr, mo, 1, 0, 0, 0, 0);
+        const end = new Date(yr, mo + 1, 0, 23, 59, 59, 999);
         return [start, end];
     }
 
     if (period === "year") {
-        const start = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
-        const end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+        const yr = selectedYear ?? now.getFullYear();
+        const start = new Date(yr, 0, 1, 0, 0, 0, 0);
+        const end = new Date(yr, 11, 31, 23, 59, 59, 999);
         return [start, end];
     }
 
     // multi-year: go back `years` full years from Jan 1 of (currentYear - years + 1)
     const safeYears = Math.max(2, Math.min(years, 10));
-    const start = new Date(now.getFullYear() - safeYears + 1, 0, 1, 0, 0, 0, 0);
-    const end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    const endYr = selectedYear ?? now.getFullYear();
+    const start = new Date(endYr - safeYears + 1, 0, 1, 0, 0, 0, 0);
+    const end = new Date(endYr, 11, 31, 23, 59, 59, 999);
     return [start, end];
 }
 
@@ -160,8 +164,10 @@ export async function GET(request: Request) {
         const { searchParams } = new URL(request.url);
         const period = searchParams.get("period") ?? "month";
         const years = parseInt(searchParams.get("years") ?? "2", 10);
+        const reqYear = searchParams.get("year") ? parseInt(searchParams.get("year")!, 10) : undefined;
+        const reqMonth = searchParams.get("month") ? parseInt(searchParams.get("month")!, 10) : undefined;
 
-        const [start, end] = getDateRange(period, years);
+        const [start, end] = getDateRange(period, years, reqYear, reqMonth);
 
         // Fetch raw rows in date range in parallel
         const [salesRows, expensesRows] = await Promise.all([
