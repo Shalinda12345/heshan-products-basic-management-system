@@ -10,6 +10,7 @@ export default function SalesNavigation() {
         { href: '/pages/sales/daily-sales', label: 'Daily Reports', icon: '📊' },
         { href: '/pages/sales/weekly-sales', label: 'Weekly Statements', icon: '📈' },
         { href: '/pages/sales/monthly-sales', label: 'Monthly Audits', icon: '📅' },
+        { href: '/pages/sales/custom-sales', label: 'Custom', icon: '🔍' },
     ];
 
     return (
