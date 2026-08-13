@@ -1,6 +1,7 @@
 "use client";
 
 import SalesNavigation from '@/app/components/sales/sales-navigation/page';
+import MonthSelector, { MONTH_NAMES } from '@/app/components/ui/month-selector';
 import React, { useEffect, useState } from 'react';
 
 interface Sale {
@@ -19,32 +20,32 @@ interface SaleItem {
   total: number;
 }
 
-export default function DailySales() {
-  const [dailySales, setDailySales] = useState<Sale[]>([]);
+export default function CustomSales() {
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [customSales, setCustomSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null);
   const [saleItems, setSaleItems] = useState<Record<number, SaleItem[]>>({});
   const [loadingItemsId, setLoadingItemsId] = useState<number | null>(null);
 
-  const todayStr = new Date().toLocaleDateString(undefined, { dateStyle: 'long' });
-
   useEffect(() => {
-    async function fetchDailySales() {
+    async function fetchCustomSales() {
       setLoading(true);
       try {
-        const response = await fetch(`/api/sales/get-daily-sales`, { cache: 'no-store' });
+        const response = await fetch(`/api/sales/get-monthly-sales?year=${selectedYear}&month=${selectedMonth}`, { cache: 'no-store' });
         if (!response.ok) throw new Error("Network response was not ok");
         const data = await response.json();
-        setDailySales(data);
+        setCustomSales(data);
       } catch (error) {
-        console.error("Error fetching daily sales:", error);
+        console.error("Error fetching custom sales:", error);
       } finally {
         setLoading(false);
       }
     }
-    fetchDailySales();
-  }, []);
+    fetchCustomSales();
+  }, [selectedYear, selectedMonth]);
 
   const toggleExpandSale = async (saleId: number) => {
     if (expandedSaleId === saleId) {
@@ -54,12 +55,11 @@ export default function DailySales() {
 
     setExpandedSaleId(saleId);
 
-    // If items are already fetched, don't fetch again
     if (saleItems[saleId]) return;
 
     setLoadingItemsId(saleId);
     try {
-      const response = await fetch(`/api/sales/get-sale-items?sale_id=${saleId}`, { cache: 'no-store' });
+      const response = await fetch(`/api/sales/get-sale-items?sale_id=${saleId}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Failed to fetch items");
       const data = await response.json();
       setSaleItems(prev => ({ ...prev, [saleId]: data }));
@@ -70,15 +70,15 @@ export default function DailySales() {
     }
   };
 
-  const filteredSales = dailySales.filter(sale =>
+  const filteredSales = customSales.filter(sale =>
     sale.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    `#d-sal-${sale.sale_id}`.includes(searchQuery.toLowerCase())
+    `#c-sal-${sale.sale_id}`.includes(searchQuery.toLowerCase())
   );
 
   const totalRevenue = filteredSales.reduce((sum, s) => sum + Number(s.grand_total), 0);
 
   return (
-    <main className="page-wrapper min-h-screen bg-slate-950">
+    <main className="page-wrapper">
       <div className="page-glow" />
       <SalesNavigation />
       <div className="page-content max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
@@ -86,20 +86,30 @@ export default function DailySales() {
         {/* Header Block */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between section-divider pb-6 gap-4">
           <div>
-            <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Daily Performance</h1>
+            <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Custom Sales Report</h1>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-              Today&apos;s sales transactions — <span className="font-semibold text-blue-400">{todayStr}</span>.
+              Sales transactions for <span className="font-semibold text-blue-400">{MONTH_NAMES[selectedMonth - 1]} {selectedYear}</span>.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
+            {/* Month & Year Selector */}
+            <MonthSelector
+              selectedYear={selectedYear}
+              selectedMonth={selectedMonth}
+              onChange={(yr, mo) => {
+                setSelectedYear(yr);
+                setSelectedMonth(mo);
+              }}
+            />
+
             {/* Executive Summary Widget */}
             <div className="glass-card-sm rounded-2xl p-5 flex items-center gap-4 min-w-[240px]">
               <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-2xl">
-                📊
+                🔍
               </div>
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Today&apos;s Revenue</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Period Revenue</p>
                 <p className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1">
                   Rs.{totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </p>
@@ -127,7 +137,7 @@ export default function DailySales() {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="ml-3 text-slate-400 hover:text-slate-200 text-xs font-semibold"
+              className="ml-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-semibold"
             >
               Clear
             </button>
@@ -139,12 +149,12 @@ export default function DailySales() {
           {loading ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
               <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Querying transaction ledger databases...</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Compiling sales report for selected period...</p>
             </div>
           ) : filteredSales.length === 0 ? (
             <div className="text-center py-20 text-slate-400 dark:text-slate-500">
               <span className="text-5xl block mb-4">📭</span>
-              <p className="text-base font-semibold">No sales transactions documented today.</p>
+              <p className="text-base font-semibold">No sales transactions registered for {MONTH_NAMES[selectedMonth - 1]} {selectedYear}.</p>
               {searchQuery && <p className="text-xs text-slate-500 mt-1">Try modifying your search criteria.</p>}
             </div>
           ) : (
@@ -173,7 +183,7 @@ export default function DailySales() {
                               ▶
                             </span>
                           </td>
-                          <td className="px-6 py-4 font-mono text-xs text-slate-400 font-semibold">#SAL-{sale.sale_id}</td>
+                          <td className="px-6 py-4 font-mono text-xs text-slate-400 font-semibold">#C-SAL-{sale.sale_id}</td>
                           <td className="px-6 py-4 font-bold text-white">{sale.customer_name}</td>
                           <td className="px-6 py-4 text-slate-500 dark:text-slate-400">
                             {new Date(sale.sale_date).toLocaleDateString(undefined, { dateStyle: 'medium' })}

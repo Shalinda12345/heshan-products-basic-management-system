@@ -7,9 +7,9 @@ export default function ExpensesNavigation() {
 
     const tabs = [
         { href: '/pages/expenses', label: 'New Expense', icon: '📝' },
-        { href: '/pages/expenses/daily-expenses', label: 'Daily Reports', icon: '📊' },
         { href: '/pages/expenses/weekly-expenses', label: 'Weekly Statements', icon: '📈' },
         { href: '/pages/expenses/monthly-expenses', label: 'Monthly Audits', icon: '📅' },
+        { href: '/pages/expenses/custom-expenses', label: 'Custom', icon: '🔍' },
     ];
 
     return (

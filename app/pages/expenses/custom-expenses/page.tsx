@@ -1,6 +1,6 @@
 "use client";
 
-import ExpensesNavigation from "@/app/components/expenses/expenses-navigation/page"
+import ExpensesNavigation from "@/app/components/expenses/expenses-navigation/page";
 import MonthSelector, { MONTH_NAMES } from "@/app/components/ui/month-selector";
 import { useEffect, useState } from "react";
 
@@ -13,33 +13,33 @@ interface Expense {
     expense_date: string;
 }
 
-export default function DailyExpenses() {
+export default function CustomExpenses() {
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-    const [dailyExpenses, setDailyExpenses] = useState<Expense[]>([]);
+    const [customExpenses, setCustomExpenses] = useState<Expense[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [searchQuery, setSearchQuery] = useState("");
 
     useEffect(() => {
-        async function fetchDailyExpenses() {
+        async function fetchCustomExpenses() {
             setLoading(true);
             try {
-                const response = await fetch(`/api/expenses/get-daily-expenses?year=${selectedYear}&month=${selectedMonth}`, { cache: 'no-store'});
+                const response = await fetch(`/api/expenses/get-monthly-expenses?year=${selectedYear}&month=${selectedMonth}`, { cache: 'no-store'});
                 if (!response.ok) throw new Error("Network response was not ok");
                 const data = await response.json();
-                setDailyExpenses(data);
+                setCustomExpenses(data);
             } catch (error) {
-                console.error("Error fetching daily expenses:", error);
+                console.error("Error fetching custom expenses:", error);
             } finally {
                 setLoading(false);
             }
         }
-        fetchDailyExpenses();
+        fetchCustomExpenses();
     }, [selectedYear, selectedMonth]);
 
-    const filteredExpenses = dailyExpenses.filter(expense => 
+    const filteredExpenses = customExpenses.filter(expense => 
         expense.expense_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        `#d-exp-${expense.expense_item_id}`.includes(searchQuery.toLowerCase())
+        `#c-exp-${expense.expense_item_id}`.includes(searchQuery.toLowerCase())
     );
 
     const totalExpense = filteredExpenses.reduce((sum, s) => sum + Number(s.total), 0);
@@ -53,13 +53,14 @@ export default function DailyExpenses() {
                 {/* Header Block */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between section-divider pb-6 gap-4">
                     <div>
-                        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Daily Expenditures</h1>
+                        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Custom Expenditure Report</h1>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-                            Ledger of expense items for <span className="font-semibold text-rose-400">{MONTH_NAMES[selectedMonth - 1]} {selectedYear}</span>.
+                            Expense log for <span className="font-semibold text-rose-400">{MONTH_NAMES[selectedMonth - 1]} {selectedYear}</span>.
                         </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-4">
+                        {/* Month & Year Selector */}
                         <MonthSelector
                             selectedYear={selectedYear}
                             selectedMonth={selectedMonth}
@@ -72,7 +73,7 @@ export default function DailyExpenses() {
                         {/* Executive Summary Widget */}
                         <div className="glass-card-sm rounded-2xl p-5 flex items-center gap-4 min-w-[240px]">
                             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 text-2xl">
-                                📊
+                                🔍
                             </div>
                             <div>
                                 <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Period Expenses</p>
@@ -115,12 +116,12 @@ export default function DailyExpenses() {
                     {loading ? (
                         <div className="flex flex-col items-center justify-center py-24 space-y-4">
                             <div className="w-10 h-10 border-4 border-rose-600 border-t-transparent rounded-full animate-spin"></div>
-                            <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Querying ledger databases...</p>
+                            <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Compiling expenditure balances for selected period...</p>
                         </div>
                     ) : filteredExpenses.length === 0 ? (
                         <div className="text-center py-20 text-slate-400 dark:text-slate-500">
                             <span className="text-5xl block mb-4">📭</span>
-                            <p className="text-base font-semibold">No expenses documented today.</p>
+                            <p className="text-base font-semibold">No expenses registered for {MONTH_NAMES[selectedMonth - 1]} {selectedYear}.</p>
                             {searchQuery && <p className="text-xs text-slate-500 mt-1">Try modifying your search criteria.</p>}
                         </div>
                     ) : (
@@ -138,7 +139,7 @@ export default function DailyExpenses() {
                                 <tbody className="divide-y divide-slate-800 text-slate-300">
                                     {filteredExpenses.map((expense) => (
                                         <tr key={expense.expense_item_id} className="hover:bg-slate-800/40 transition-colors">
-                                            <td className="px-6 py-4 font-mono text-xs text-slate-400 font-semibold">#EXP-{expense.expense_item_id}</td>
+                                            <td className="px-6 py-4 font-mono text-xs text-slate-400 font-semibold">#C-EXP-{expense.expense_item_id}</td>
                                             <td className="px-6 py-4 font-bold text-white">{expense.expense_name}</td>
                                             <td className="px-6 py-4 text-right font-mono text-slate-400 text-xs">
                                                 {expense.quantity && expense.quantity > 1 ? (

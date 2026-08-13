@@ -1,8 +1,7 @@
 "use client";
 
-import ExpensesNavigation from "@/app/components/expenses/expenses-navigation/page"
-import MonthSelector, { MONTH_NAMES } from "@/app/components/ui/month-selector";
-import { useEffect, useState } from "react";
+import ExpensesNavigation from "@/app/components/expenses/expenses-navigation/page";
+import { useEffect, useState, useMemo } from "react";
 
 interface Expense {
     expense_item_id: number;
@@ -14,17 +13,30 @@ interface Expense {
 }
 
 export default function WeeklyExpenses() {
-    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
     const [weeklyExpenses, setWeeklyExpenses] = useState<Expense[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [searchQuery, setSearchQuery] = useState("");
+
+    // Compute current week range (Monday – Sunday)
+    const weekRange = useMemo(() => {
+        const now = new Date();
+        const dayOfWeek = now.getDay();
+        const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - daysToSubtract);
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
+        return {
+            start: startOfWeek.toLocaleDateString(undefined, { dateStyle: 'medium' }),
+            end: endOfWeek.toLocaleDateString(undefined, { dateStyle: 'medium' }),
+        };
+    }, []);
 
     useEffect(() => {
         async function fetchWeeklyExpenses() {
             setLoading(true);
             try {
-                const response = await fetch(`/api/expenses/get-weekly-expenses?year=${selectedYear}&month=${selectedMonth}`, { cache: 'no-store'});
+                const response = await fetch(`/api/expenses/get-weekly-expenses`, { cache: 'no-store'});
                 if (!response.ok) throw new Error("Network response was not ok");
                 const data = await response.json();
                 setWeeklyExpenses(data);
@@ -35,7 +47,7 @@ export default function WeeklyExpenses() {
             }
         }
         fetchWeeklyExpenses();
-    }, [selectedYear, selectedMonth]);
+    }, []);
 
     const filteredExpenses = weeklyExpenses.filter(expense => 
         expense.expense_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -55,27 +67,18 @@ export default function WeeklyExpenses() {
                     <div>
                         <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Weekly Statements</h1>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-                            Review operational expenditure metrics for <span className="font-semibold text-rose-400">{MONTH_NAMES[selectedMonth - 1]} {selectedYear}</span>.
+                            This week&apos;s operational expenditure metrics — <span className="font-semibold text-rose-400">{weekRange.start} – {weekRange.end}</span>.
                         </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-4">
-                        <MonthSelector
-                            selectedYear={selectedYear}
-                            selectedMonth={selectedMonth}
-                            onChange={(yr, mo) => {
-                                setSelectedYear(yr);
-                                setSelectedMonth(mo);
-                            }}
-                        />
-
                         {/* Executive Summary Widget */}
                         <div className="glass-card-sm rounded-2xl p-5 flex items-center gap-4 min-w-[240px]">
                             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 text-2xl">
                                 📈
                             </div>
                             <div>
-                                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Period Expenses</p>
+                                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Weekly Expenses</p>
                                 <p className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1">
                                     Rs.{totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                 </p>
@@ -97,7 +100,7 @@ export default function WeeklyExpenses() {
                             placeholder="Search by expense category..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-slate-700 rounded-xl bg-slate-900/50 text-white text-sm focus:outline-none focus:border-rose-500 transition-all font-medium"
+                            className="w-full pl-10 pr-4 py-2 border border-slate-700 rounded-xl bg-slate-900/50 text-white text-sm focus:outline-none focus:border-rose-500 transition-all font-medium"
                         />
                     </div>
                     {searchQuery && (
