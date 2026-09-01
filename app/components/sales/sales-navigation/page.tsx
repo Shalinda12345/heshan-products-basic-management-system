@@ -7,6 +7,7 @@ export default function SalesNavigation() {
 
     const tabs = [
         { href: '/pages/sales', label: 'New Sale', icon: '📝' },
+        { href: '/pages/sales/items-sold', label: 'Items Sold', icon: '📦' },
         { href: '/pages/sales/daily-sales', label: 'Daily Reports', icon: '📊' },
         { href: '/pages/sales/weekly-sales', label: 'Weekly Statements', icon: '📈' },
         { href: '/pages/sales/monthly-sales', label: 'Monthly Audits', icon: '📅' },
