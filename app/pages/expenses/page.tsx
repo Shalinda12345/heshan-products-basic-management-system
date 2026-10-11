@@ -23,9 +23,6 @@ interface Expense_Item_List {
 interface Employees {
     employee_id: number;
     employee_name: string;
-    employee_address: string;
-    employee_contact_no: string;
-    maritial_status: string;
 }
 
 interface StockItem {
@@ -69,7 +66,7 @@ export default function ExpensesPage() {
     const [amount, setAmount] = useState(0);
     const [expenseDate, setExpenseDate] = useState("");
     const [employeeName, setEmployeeName] = useState("");
-    const [allEmployees, setAllEmployees] = useState([]);
+    const [allEmployees, setAllEmployees] = useState<Employees[]>([]);
 
     // ── Stock-based return state (all 4 types share the stock picker) ─────────
     const [allStockItems, setAllStockItems] = useState<StockItem[]>([]);
@@ -141,35 +138,6 @@ export default function ExpensesPage() {
 
     // ─── Data fetching ────────────────────────────────────────────────────────
 
-    useEffect(() => {
-        async function fetchExpenseItemsList() {
-            try {
-                const response = await fetch("/api/expenses/get-expense-item-list", { cache: "no-store" });
-                if (!response.ok) throw new Error("Network response was not ok");
-                const data = await response.json();
-                setAllExpenseItems(data);
-            } catch (error) {
-                console.error("Error fetching expense items list:", error);
-            } finally {
-                setLoadingDropdown(false);
-            }
-        }
-        fetchExpenseItemsList();
-    }, []);
-
-    const fetchEmployeeList = async () => {
-        try {
-            const response = await fetch("/api/employees", { cache: "no-store" });
-            if (!response.ok) throw new Error("Network response was not ok");
-            const data = await response.json();
-            setAllEmployees(data.data);
-        } catch (error) {
-            console.error("Error fetching employee list:", error);
-        } finally {
-            setLoadingDropdown(false);
-        }
-    };
-
     const fetchRecentExpenses = async () => {
         try {
             const response = await fetch("/api/expenses/get-daily-expenses", { cache: 'no-store' });
@@ -194,20 +162,6 @@ export default function ExpensesPage() {
         }
     };
 
-    const fetchSalesList = async () => {
-        setLoadingSales(true);
-        try {
-            const response = await fetch("/api/sales/get-sales-list", { cache: "no-store" });
-            if (!response.ok) throw new Error("Failed to fetch sales");
-            const data = await response.json();
-            setAllSales(data);
-        } catch (error) {
-            console.error("Error fetching sales list:", error);
-        } finally {
-            setLoadingSales(false);
-        }
-    };
-
     const fetchSaleItems = async (saleId: number) => {
         setLoadingSaleItems(true);
         setSelectedSaleItems([]);
@@ -226,9 +180,48 @@ export default function ExpensesPage() {
         }
     };
 
-    useEffect(() => { const init = async () => { await fetchRecentExpenses(); }; init(); }, []);
-    useEffect(() => { fetchEmployeeList(); }, []);
-    useEffect(() => { fetchStockItems(); }, []);
+    useEffect(() => {
+        let isMounted = true;
+        const initData = async () => {
+            try {
+                const [expItemsRes, empRes, recExpRes, stockRes] = await Promise.all([
+                    fetch("/api/expenses/get-expense-item-list", { cache: "no-store" }),
+                    fetch("/api/employees", { cache: "no-store" }),
+                    fetch("/api/expenses/get-daily-expenses", { cache: "no-store" }),
+                    fetch("/api/stock", { cache: "no-store" }),
+                ]);
+
+                if (expItemsRes.ok) {
+                    const data = await expItemsRes.json();
+                    if (isMounted) setAllExpenseItems(data);
+                }
+                if (empRes.ok) {
+                    const data = await empRes.json();
+                    if (isMounted) setAllEmployees(data.data || []);
+                }
+                if (recExpRes.ok) {
+                    const data = await recExpRes.json();
+                    if (isMounted) setRecentExpenses(data);
+                }
+                if (stockRes.ok) {
+                    const data = await stockRes.json();
+                    if (isMounted) setAllStockItems(data);
+                }
+            } catch (err) {
+                console.error("Initialization error:", err);
+            } finally {
+                if (isMounted) {
+                    setLoadingDropdown(false);
+                    setLoadingRecent(false);
+                }
+            }
+        };
+        initData();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     // When "Return" is chosen and then return type changes to a sale-reduction type, fetch sales
     useEffect(() => {
@@ -236,7 +229,29 @@ export default function ExpensesPage() {
             returnType === "sale_reduction_return" ||
             returnType === "sale_reduction_expense_return"
         ) {
-            fetchSalesList();
+            let isCancelled = false;
+            Promise.resolve().then(() => {
+                if (!isCancelled) setLoadingSales(true);
+            });
+            fetch("/api/sales/get-sales-list", { cache: "no-store" })
+                .then((res) => {
+                    if (!res.ok) throw new Error("Failed to fetch sales");
+                    return res.json();
+                })
+                .then((data) => {
+                    if (!isCancelled) {
+                        setAllSales(data);
+                        setLoadingSales(false);
+                    }
+                })
+                .catch((err) => {
+                    console.error("Error fetching sales list:", err);
+                    if (!isCancelled) setLoadingSales(false);
+                });
+
+            return () => {
+                isCancelled = true;
+            };
         }
     }, [returnType]);
 

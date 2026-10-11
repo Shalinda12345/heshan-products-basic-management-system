@@ -1,13 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert/page';
-
-interface Product {
-  product_id: number;
-  product_name: string;
-  description: string;
-}
 
 interface StockItem {
   product_id: number;
@@ -18,7 +12,6 @@ interface StockItem {
 
 export default function StockPage() {
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   
@@ -34,16 +27,16 @@ export default function StockPage() {
     message: '',
   });
 
-  const showAlert = (variant: AlertVariant, title: string, message: string) => {
+  const showAlert = useCallback((variant: AlertVariant, title: string, message: string) => {
     setAlertState({ isOpen: true, variant, title, message });
-  };
+  }, []);
 
   const closeAlert = () => {
     setAlertState(prev => ({ ...prev, isOpen: false }));
   };
 
-  // Fetch stock levels and products list
-  const fetchStockData = async () => {
+  // Fetch stock levels
+  const fetchStockData = useCallback(async () => {
     try {
       const response = await fetch("/api/stock", { cache: 'no-store' });
       if (!response.ok) throw new Error("Failed to fetch stock");
@@ -53,27 +46,16 @@ export default function StockPage() {
       console.error("Error fetching stock:", error);
       showAlert('error', 'Error', 'Failed to retrieve stock levels.');
     }
-  };
-
-  const fetchProducts = async () => {
-    try {
-      const response = await fetch("/api/products");
-      if (!response.ok) throw new Error("Failed to fetch products");
-      const data = await response.json();
-      setAllProducts(data);
-    } catch (error: unknown) {
-      console.error("Error fetching products:", error);
-    }
-  };
+  }, [showAlert]);
 
   useEffect(() => {
     const initializeData = async () => {
       setLoading(true);
-      await Promise.all([fetchStockData(), fetchProducts()]);
+      await fetchStockData();
       setLoading(false);
     };
     initializeData();
-  }, []);
+  }, [fetchStockData]);
 
   const handleAddStock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,7 +84,7 @@ export default function StockPage() {
         await fetchStockData();
         
         // Find product name for success alert
-        const prod = allProducts.find(p => p.product_id === Number(selectedProductId));
+        const prod = stockItems.find(p => p.product_id === Number(selectedProductId));
         showAlert('success', 'Stock Added', `Successfully added ${quantityToAdd} units of "${prod?.product_name || 'Product'}".`);
         
         // Reset form
@@ -201,7 +183,7 @@ export default function StockPage() {
                     required
                   >
                     <option value="">Choose product</option>
-                    {allProducts.map((product) => (
+                    {stockItems.map((product) => (
                       <option key={product.product_id} value={product.product_id}>
                         {product.product_name}
                       </option>

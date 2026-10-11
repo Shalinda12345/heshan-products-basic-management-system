@@ -4,10 +4,7 @@ import SalesNavigation from '@/app/components/sales/sales-navigation/page';
 import ItemsSoldSummary from '@/app/components/sales/items-sold-summary/page';
 import React, { useEffect, useState } from 'react';
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
+import { MONTH_NAMES } from '@/app/components/ui/month-selector';
 
 interface Sale {
   sale_id: number;
