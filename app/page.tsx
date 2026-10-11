@@ -261,7 +261,6 @@ export default function Home() {
             cancelled = true;
             controller.abort();
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [period, years, selectedYear, selectedMonth, refreshTick]);
 
     // Current date header

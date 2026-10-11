@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import MonthSelector, { MONTH_NAMES } from '@/app/components/ui/month-selector';
+import MonthSelector from '@/app/components/ui/month-selector';
 
 export interface ItemSummary {
     product_name: string;
@@ -49,14 +49,20 @@ export default function ItemsSoldSummary({
     showTimeframeSelector = false,
     title,
     subtitle,
-    compact = false,
 }: ItemsSoldSummaryProps) {
-    const [currentTimeframe, setCurrentTimeframe] = useState<'daily' | 'weekly' | 'monthly' | 'custom'>(initialTimeframe);
-    const [year, setYear] = useState<number>(propYear ?? new Date().getFullYear());
-    const [month, setMonth] = useState<number>(propMonth ?? new Date().getMonth() + 1);
-    const [customStartDate, setCustomStartDate] = useState<string>(propStartDate ?? '');
-    const [customEndDate, setCustomEndDate] = useState<string>(propEndDate ?? '');
-    const [specificDate, setSpecificDate] = useState<string>(propDate ?? '');
+    const [localTimeframe, setLocalTimeframe] = useState<'daily' | 'weekly' | 'monthly' | 'custom'>(initialTimeframe);
+    const [localYear, setLocalYear] = useState<number>(propYear ?? new Date().getFullYear());
+    const [localMonth, setLocalMonth] = useState<number>(propMonth ?? new Date().getMonth() + 1);
+    const [localStartDate, setLocalStartDate] = useState<string>(propStartDate ?? '');
+    const [localEndDate, setLocalEndDate] = useState<string>(propEndDate ?? '');
+    const [localSpecificDate] = useState<string>(propDate ?? '');
+
+    const currentTimeframe = showTimeframeSelector ? localTimeframe : initialTimeframe;
+    const year = showTimeframeSelector ? localYear : (propYear ?? new Date().getFullYear());
+    const month = showTimeframeSelector ? localMonth : (propMonth ?? new Date().getMonth() + 1);
+    const customStartDate = showTimeframeSelector ? localStartDate : (propStartDate ?? '');
+    const customEndDate = showTimeframeSelector ? localEndDate : (propEndDate ?? '');
+    const specificDate = showTimeframeSelector ? localSpecificDate : (propDate ?? '');
 
     const [items, setItems] = useState<ItemSummary[]>([]);
     const [summary, setSummary] = useState<SummaryStats>({
@@ -69,22 +75,6 @@ export default function ItemsSoldSummary({
     const [loading, setLoading] = useState<boolean>(true);
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [sortBy, setSortBy] = useState<'quantity-desc' | 'quantity-asc' | 'revenue-desc' | 'revenue-asc' | 'name'>('quantity-desc');
-
-    // Sync props with state when parent props change
-    useEffect(() => {
-        if (initialTimeframe) setCurrentTimeframe(initialTimeframe);
-    }, [initialTimeframe]);
-
-    useEffect(() => {
-        if (propYear !== undefined) setYear(propYear);
-        if (propMonth !== undefined) setMonth(propMonth);
-    }, [propYear, propMonth]);
-
-    useEffect(() => {
-        if (propDate !== undefined) setSpecificDate(propDate);
-        if (propStartDate !== undefined) setCustomStartDate(propStartDate);
-        if (propEndDate !== undefined) setCustomEndDate(propEndDate);
-    }, [propDate, propStartDate, propEndDate]);
 
     // Fetch items summary
     useEffect(() => {
@@ -140,7 +130,7 @@ export default function ItemsSoldSummary({
 
     // Filter and sort items
     const filteredAndSortedItems = useMemo(() => {
-        let list = items.filter((item) =>
+        const list = items.filter((item) =>
             item.product_name.toLowerCase().includes(searchQuery.toLowerCase())
         );
 
@@ -212,7 +202,7 @@ export default function ItemsSoldSummary({
                         ].map((tab) => (
                             <button
                                 key={tab.key}
-                                onClick={() => setCurrentTimeframe(tab.key as any)}
+                                onClick={() => setLocalTimeframe(tab.key as 'daily' | 'weekly' | 'monthly' | 'custom')}
                                 className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 active:scale-95 cursor-pointer ${
                                     currentTimeframe === tab.key
                                         ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
@@ -234,8 +224,8 @@ export default function ItemsSoldSummary({
                         selectedYear={year}
                         selectedMonth={month}
                         onChange={(yr, mo) => {
-                            setYear(yr);
-                            setMonth(mo);
+                            setLocalYear(yr);
+                            setLocalMonth(mo);
                         }}
                     />
                 </div>
@@ -249,14 +239,14 @@ export default function ItemsSoldSummary({
                             <input
                                 type="date"
                                 value={customStartDate}
-                                onChange={(e) => setCustomStartDate(e.target.value)}
+                                onChange={(e) => setLocalStartDate(e.target.value)}
                                 className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-medium focus:outline-none focus:border-blue-500"
                             />
                             <span className="text-slate-500 text-xs">to</span>
                             <input
                                 type="date"
                                 value={customEndDate}
-                                onChange={(e) => setCustomEndDate(e.target.value)}
+                                onChange={(e) => setLocalEndDate(e.target.value)}
                                 className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-medium focus:outline-none focus:border-blue-500"
                             />
                         </div>
@@ -268,8 +258,8 @@ export default function ItemsSoldSummary({
                             selectedYear={year}
                             selectedMonth={month}
                             onChange={(yr, mo) => {
-                                setYear(yr);
-                                setMonth(mo);
+                                setLocalYear(yr);
+                                setLocalMonth(mo);
                             }}
                         />
                     </div>
@@ -359,7 +349,7 @@ export default function ItemsSoldSummary({
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400 whitespace-nowrap">Sort By:</span>
                     <select
                         value={sortBy}
-                        onChange={(e) => setSortBy(e.target.value as any)}
+                        onChange={(e) => setSortBy(e.target.value as 'quantity-desc' | 'quantity-asc' | 'revenue-desc' | 'revenue-asc' | 'name')}
                         className="bg-slate-900 border border-slate-700 text-slate-200 text-xs sm:text-sm rounded-xl px-3 py-2 font-medium focus:outline-none focus:border-blue-500 cursor-pointer"
                     >
                         <option value="quantity-desc">Quantity (High → Low)</option>

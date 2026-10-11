@@ -168,7 +168,6 @@ export async function GET(request: Request) {
         // Format numbers cleanly
         let totalUnitsSold = 0;
         let totalRevenue = 0;
-        let totalOrdersSet = new Set<number>();
 
         const formattedItems = rawItems.map((item) => {
             const quantity = Number(item.total_quantity) || 0;

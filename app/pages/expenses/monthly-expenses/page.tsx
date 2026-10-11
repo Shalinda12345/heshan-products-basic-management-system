@@ -3,10 +3,7 @@
 import ExpensesNavigation from "@/app/components/expenses/expenses-navigation/page";
 import { useEffect, useState } from "react";
 
-const MONTH_NAMES = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-];
+import { MONTH_NAMES } from "@/app/components/ui/month-selector";
 
 interface Expense {
     expense_item_id: number;

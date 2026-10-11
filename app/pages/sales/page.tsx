@@ -12,11 +12,6 @@ type SaleItem = {
   total: number;
 };
 
-interface Product {
-  product_id: number;
-  product_name: string;
-}
-
 interface StockItem {
   product_id: number;
   product_name: string;
@@ -30,7 +25,6 @@ export default function SalesPage() {
   const [quantityPerProduct, setQuantityPerProduct] = useState(0);
   const [sellingPricePerProduct, setSellingPricePerProduct] = useState(0);
   const [productName, setProductName] = useState("");
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [customerName, setCustomerName] = useState("");
   const [saleDate, setSaleDate] = useState("");
@@ -42,9 +36,6 @@ export default function SalesPage() {
     message: '',
   });
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
-  const [quantity, setQuantity] = useState<number>(0);
-
-
 
   const showAlert = (variant: AlertVariant, title: string, message: string) => {
     setAlertState({ isOpen: true, variant, title, message });
@@ -67,27 +58,18 @@ export default function SalesPage() {
       const data = await response.json();
       setStockItems(data);
     } catch (error) {
-      console.error(error);
+      console.error("Error fetching stock:", error);
     }
   };
 
   useEffect(() => {
-    async function fetchProducts() {
-      try {
-        const response = await fetch("/api/products");
-        if (!response.ok) throw new Error("Network response was not ok");
-        const data = await response.json();
-        setAllProducts(data);
-
-        await fetchStock();
-      } catch (error) {
-        console.error("Error fetching products:", error);
-      } finally {
-        setLoading(false);
-      }
+    async function loadData() {
+      setLoading(true);
+      await fetchStock();
+      setLoading(false);
     }
 
-    fetchProducts();
+    loadData();
   }, []);
 
   const stock = stockItems.find(
@@ -275,7 +257,7 @@ export default function SalesPage() {
                     required
                   >
                     <option value="">Select a product</option>
-                    {allProducts.map((product) => (
+                    {stockItems.map((product) => (
                       <option key={product.product_id} value={product.product_name}>
                         {product.product_name}
                       </option>

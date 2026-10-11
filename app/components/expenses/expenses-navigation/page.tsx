@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 export default function ExpensesNavigation() {
@@ -19,7 +20,7 @@ export default function ExpensesNavigation() {
                     {tabs.map((tab) => {
                         const isActive = pathname === tab.href;
                         return (
-                            <a
+                            <Link
                                 key={tab.href}
                                 href={tab.href}
                                 className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold transition-all duration-200 transform active:scale-95 text-xs sm:text-sm whitespace-nowrap ${
@@ -30,7 +31,7 @@ export default function ExpensesNavigation() {
                             >
                                 <span>{tab.icon}</span>
                                 <span>{tab.label}</span>
-                            </a>
+                            </Link>
                         );
                     })}
                 </nav>
