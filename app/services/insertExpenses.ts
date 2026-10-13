@@ -1,11 +1,13 @@
 import { db } from "../db";
 import { expenses } from "../db/schema";
+import { roundMoney } from "../lib/money";
 
 interface ExpenseItemInput {
     expense_name: string;
+    employee_name?: string; // Employee paid, for salary-type expenses
     quantity: number;
     per_expense_amount: number;
-    total: number;
+    total?: number; // ignored: recomputed from quantity × per_expense_amount
     expense_date: string; // Received as "YYYY-MM-DD" string from client
 }
 
@@ -28,19 +30,23 @@ export async function InsertExpenses(data: ExpenseItemInput) {
     if (!data.expense_date) {
         throw new Error("Expense date is required.");
     }
-    if (data.per_expense_amount === undefined || Number(data.per_expense_amount) < 0) {
+    if (data.per_expense_amount === undefined || !Number.isFinite(Number(data.per_expense_amount)) || Number(data.per_expense_amount) < 0) {
         throw new Error("Per-expense amount cannot be negative.");
     }
 
     const qty = data.quantity ? Number(data.quantity) : 1;
+    if (!Number.isFinite(qty) || qty <= 0) {
+        throw new Error("Quantity must be greater than 0.");
+    }
     const perAmount = Number(data.per_expense_amount);
-    const calculatedTotal = data.total !== undefined ? Number(data.total) : qty * perAmount;
+    const calculatedTotal = roundMoney(qty * perAmount);
     const parsedDate = parseLocalDate(data.expense_date);
 
     return await db.transaction(async (tx) => {
         // 1. Insert into the main 'expenses' table
         const [Expense_result] = await tx.insert(expenses).values({
             expense_name: data.expense_name.trim(),
+            employee_name: String(data.employee_name ?? "").trim() || null,
             quantity: qty,
             per_expense_amount: perAmount,
             total: calculatedTotal,

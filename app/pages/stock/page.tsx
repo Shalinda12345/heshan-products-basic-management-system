@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert/page';
+import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert';
 
 interface StockItem {
   product_id: number;

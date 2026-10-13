@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { InsertExpenses } from "@/app/services/insertExpenses";
+import { toErrorResponse } from "@/app/lib/api-error";
 
 export async function POST(request:Request) {
     try{
@@ -13,12 +14,12 @@ export async function POST(request:Request) {
             expense_item_id: result.expense_item_id
         }, { status: 201 });
     } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        console.error("Failed to save expenses: ", errorMessage);
-        
+        console.error("Failed to save expenses: ", error);
+        const { message, status } = toErrorResponse(error);
+
         return NextResponse.json(
-            { success: false, message: errorMessage, error: errorMessage },
-            { status: 400 }
+            { success: false, message, error: message },
+            { status }
         );
     }
 }

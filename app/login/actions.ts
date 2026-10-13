@@ -2,14 +2,17 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, createSessionToken } from "@/app/lib/session";
 
 export async function handleLogin(prevState: unknown, formData: FormData) {
     const username = formData.get("username") as string;
     const password = formData.get("password") as string;
 
+    // `username` is echoed back so the form can keep it after a failed attempt
     if (!username || !password) {
         return {
             error: "Username and password are required.",
+            username,
         };
     }
 
@@ -17,18 +20,19 @@ export async function handleLogin(prevState: unknown, formData: FormData) {
     if (username !== "admin" || password !== "admin") {
         return {
             error: "Invalid username or password.",
+            username,
         };
     }
 
-    // Create cookie
+    // Create a signed, expiring session cookie
     const cookieStore = await cookies();
 
-    cookieStore.set("auth_token", "logged_in", {
+    cookieStore.set(SESSION_COOKIE, await createSessionToken(), {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
         path: "/",
-        maxAge: 60 * 60 * 1,
+        maxAge: SESSION_MAX_AGE_SECONDS,
     });
 
     redirect("/");

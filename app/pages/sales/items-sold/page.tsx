@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import SalesNavigation from '@/app/components/sales/sales-navigation/page';
-import ItemsSoldSummary from '@/app/components/sales/items-sold-summary/page';
+import SalesNavigation from '@/app/components/sales/sales-navigation';
+import ItemsSoldSummary from '@/app/components/sales/items-sold-summary';
 
 export default function ItemsSoldPage() {
     return (

@@ -251,6 +251,7 @@ export async function GET(request: Request) {
                 },
                 expenseBreakdown,
                 topCustomers,
+                uniqueCustomers: customerMap.size,
             },
             {
                 headers: {

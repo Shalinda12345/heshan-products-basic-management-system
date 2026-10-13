@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/app/db";
 import { expenses, stocks, sales, sale_items, returns } from "@/app/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { toErrorResponse } from "@/app/lib/api-error";
+import { roundMoney } from "@/app/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -25,12 +27,17 @@ function parseLocalDate(dateStr: string): Date {
     return new Date(dateStr);
 }
 
+function isPositive(value: unknown): boolean {
+    return Number.isFinite(Number(value)) && Number(value) > 0;
+}
+
 // ─────────────────────────────────────────────────────────
 // POST /api/expenses/save-return-expenses
 // ─────────────────────────────────────────────────────────
 export async function POST(request: Request) {
     try {
         const body = await request.json();
+        // Totals are always derived from quantity × per-unit amount; client-sent totals are ignored
         const {
             return_type,
             // For stock-based returns (stock_expense_return, sale_reduction_return)
@@ -38,17 +45,14 @@ export async function POST(request: Request) {
             product_name,
             quantity,
             per_unit_amount,
-            total,
             expense_date,
             // For sale-reduction returns (sale_reduction_return, sale_reduction_expense_return)
             sale_id,
             sale_product_name,
             sale_quantity,
             sale_per_unit_amount,
-            sale_total,
-            // Custom expense values for sale_reduction_expense_return
+            // Custom expense rate for sale_reduction_expense_return
             expense_per_unit_amount,
-            expense_total,
         } = body;
 
         // ── Basic validation ──────────────────────────────
@@ -74,21 +78,22 @@ export async function POST(request: Request) {
         //   - Insert returns record
         // ────────────────────────────────────────────────────────────────────
         if (return_type === "stock_expense_return") {
-            if (!product_id || !product_name || !quantity || Number(quantity) <= 0 || Number(per_unit_amount) <= 0) {
+            if (!isPositive(product_id) || !product_name || !isPositive(quantity) || !isPositive(per_unit_amount)) {
                 return NextResponse.json(
                     { success: false, message: "product_id, product_name, quantity, and per_unit_amount are required for Stock Expense Return." },
                     { status: 400 }
                 );
             }
 
-            const returnTotal = total !== undefined && total !== null ? Number(total) : Number(quantity) * Number(per_unit_amount);
+            const returnTotal = roundMoney(Number(quantity) * Number(per_unit_amount));
 
             const result = await db.transaction(async (tx) => {
-                // Validate stock availability
+                // Validate stock availability (row locked until commit so concurrent deductions can't overdraw it)
                 const [currentStock] = await tx
                     .select()
                     .from(stocks)
-                    .where(eq(stocks.product_id, Number(product_id)));
+                    .where(eq(stocks.product_id, Number(product_id)))
+                    .for("update");
 
                 if (!currentStock) throw new Error(`No stock record found for product ID ${product_id}.`);
                 if (Number(currentStock.quantity) < Number(quantity)) {
@@ -142,13 +147,13 @@ export async function POST(request: Request) {
         //   - Insert returns record
         // ────────────────────────────────────────────────────────────────────
         if (return_type === "sale_reduction_return") {
-            if (!sale_id || !sale_product_name || !sale_quantity || Number(sale_quantity) <= 0 || Number(sale_per_unit_amount) <= 0) {
+            if (!isPositive(sale_id) || !sale_product_name || !isPositive(sale_quantity) || !isPositive(sale_per_unit_amount)) {
                 return NextResponse.json(
                     { success: false, message: "sale_id, sale_product_name, sale_quantity, and sale_per_unit_amount are required for Sale Reduction Return." },
                     { status: 400 }
                 );
             }
-            if (!product_id) {
+            if (!isPositive(product_id)) {
                 return NextResponse.json(
                     { success: false, message: "A stock item must be selected to credit back for Sale Reduction Return." },
                     { status: 400 }
@@ -156,11 +161,12 @@ export async function POST(request: Request) {
             }
 
             const result = await db.transaction(async (tx) => {
-                // Fetch the sale
+                // Fetch the sale (sale and line rows are locked until commit so concurrent returns can't over-return)
                 const [currentSale] = await tx
                     .select()
                     .from(sales)
-                    .where(eq(sales.sale_id, Number(sale_id)));
+                    .where(eq(sales.sale_id, Number(sale_id)))
+                    .for("update");
 
                 if (!currentSale) throw new Error(`Sale ID ${sale_id} not found.`);
 
@@ -169,6 +175,7 @@ export async function POST(request: Request) {
                     .select()
                     .from(sale_items)
                     .where(eq(sale_items.sale_id, Number(sale_id)))
+                    .for("update")
                     .then((rows) => rows.filter((r) => r.product_name === sale_product_name));
 
                 if (!saleItem) throw new Error(`No sale item matching "${sale_product_name}" found in Sale #${sale_id}.`);
@@ -179,9 +186,10 @@ export async function POST(request: Request) {
                     throw new Error(`Cannot return ${returnQty} units — only ${existingQty} were sold in this transaction.`);
                 }
 
-                const returnLineTotal = sale_total !== undefined && sale_total !== null
-                    ? Number(sale_total)
-                    : Number(returnQty) * Number(sale_per_unit_amount);
+                const returnLineTotal = roundMoney(returnQty * Number(sale_per_unit_amount));
+                if (returnLineTotal > Number(saleItem.total)) {
+                    throw new Error(`Return amount Rs. ${returnLineTotal.toFixed(2)} exceeds the Rs. ${Number(saleItem.total).toFixed(2)} remaining for "${sale_product_name}" in Sale #${sale_id}.`);
+                }
 
                 const newSaleItemQty = Math.max(0, existingQty - returnQty);
                 const newSaleItemTotal = Math.max(0, parseFloat((Number(saleItem.total) - returnLineTotal).toFixed(2)));
@@ -244,7 +252,7 @@ export async function POST(request: Request) {
         //   - Insert returns record
         // ────────────────────────────────────────────────────────────────────
         if (return_type === "sale_reduction_expense_return") {
-            if (!sale_id || !sale_product_name || !sale_quantity || Number(sale_quantity) <= 0 || Number(sale_per_unit_amount) <= 0 || !expense_per_unit_amount || Number(expense_per_unit_amount) <= 0) {
+            if (!isPositive(sale_id) || !sale_product_name || !isPositive(sale_quantity) || !isPositive(sale_per_unit_amount) || !isPositive(expense_per_unit_amount)) {
                 return NextResponse.json(
                     { success: false, message: "sale_id, sale_product_name, sale_quantity, sale_per_unit_amount, and expense_per_unit_amount are required for Sale Reduction Expense Return." },
                     { status: 400 }
@@ -252,11 +260,12 @@ export async function POST(request: Request) {
             }
 
             const result = await db.transaction(async (tx) => {
-                // Fetch the sale
+                // Fetch the sale (sale and line rows are locked until commit so concurrent returns can't over-return)
                 const [currentSale] = await tx
                     .select()
                     .from(sales)
-                    .where(eq(sales.sale_id, Number(sale_id)));
+                    .where(eq(sales.sale_id, Number(sale_id)))
+                    .for("update");
 
                 if (!currentSale) throw new Error(`Sale ID ${sale_id} not found.`);
 
@@ -265,6 +274,7 @@ export async function POST(request: Request) {
                     .select()
                     .from(sale_items)
                     .where(eq(sale_items.sale_id, Number(sale_id)))
+                    .for("update")
                     .then((rows) => rows.filter((r) => r.product_name === sale_product_name));
 
                 if (!saleItem) throw new Error(`No sale item matching "${sale_product_name}" found in Sale #${sale_id}.`);
@@ -275,13 +285,12 @@ export async function POST(request: Request) {
                     throw new Error(`Cannot return ${returnQty} units — only ${existingQty} were sold in this transaction.`);
                 }
 
-                const returnLineTotal = sale_total !== undefined && sale_total !== null
-                    ? Number(sale_total)
-                    : Number(returnQty) * Number(sale_per_unit_amount);
+                const returnLineTotal = roundMoney(returnQty * Number(sale_per_unit_amount));
+                if (returnLineTotal > Number(saleItem.total)) {
+                    throw new Error(`Return amount Rs. ${returnLineTotal.toFixed(2)} exceeds the Rs. ${Number(saleItem.total).toFixed(2)} remaining for "${sale_product_name}" in Sale #${sale_id}.`);
+                }
 
-                const calculatedExpenseTotal = expense_total !== undefined && expense_total !== null
-                    ? Number(expense_total)
-                    : Number(returnQty) * Number(expense_per_unit_amount);
+                const calculatedExpenseTotal = roundMoney(returnQty * Number(expense_per_unit_amount));
 
                 const newSaleItemQty = Math.max(0, existingQty - returnQty);
                 const newSaleItemTotal = Math.max(0, parseFloat((Number(saleItem.total) - returnLineTotal).toFixed(2)));
@@ -340,11 +349,11 @@ export async function POST(request: Request) {
             { status: 400 }
         );
     } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        console.error("Failed to process return:", errorMessage);
+        console.error("Failed to process return:", error);
+        const { message, status } = toErrorResponse(error);
         return NextResponse.json(
-            { success: false, message: errorMessage },
-            { status: 400 }
+            { success: false, message },
+            { status }
         );
     }
 }

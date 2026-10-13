@@ -16,6 +16,12 @@ export async function GET(request: Request) {
                 { status: 400 }
             );
         }
+        if (!Number.isInteger(Number(saleId)) || Number(saleId) <= 0) {
+            return NextResponse.json(
+                { error: "Invalid parameter: sale_id must be a positive integer" },
+                { status: 400 }
+            );
+        }
 
         const items = await db
             .select()

@@ -1,9 +1,9 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import AddSalesPopup from '@/app/components/sales/add-sales-popup/page';
-import SalesNavigation from '@/app/components/sales/sales-navigation/page';
-import SalesInvoicePage from '@/app/components/sales/sales-invoice/page';
-import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert/page';
+import AddSalesPopup from '@/app/components/sales/add-sales-popup';
+import SalesNavigation from '@/app/components/sales/sales-navigation';
+import SalesInvoicePage from '@/app/components/sales/sales-invoice';
+import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert';
 
 type SaleItem = {
   product_name: string;
