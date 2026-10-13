@@ -39,6 +39,7 @@ interface DashboardData {
     kpis: KPIs;
     expenseBreakdown: ExpenseCategory[];
     topCustomers: TopCustomer[];
+    uniqueCustomers: number;
 }
 
 // ─── Period config ────────────────────────────────────────────────────────────
@@ -527,7 +528,7 @@ export default function Home() {
 
                 {/* ═══ Top Customers Table ═════════════════════════════════════ */}
                 <div style={{ marginBottom: 28 }}>
-                    <ChartCard title="Top Customers by Revenue" subtitle={`Highest-value customers — ${PERIODS.find(p => p.key === period)?.label}`}>
+                    <ChartCard title="Top Customers by Revenue" subtitle={`Highest-value customers — ${period === 'month' ? `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}` : PERIODS.find(p => p.key === period)?.label}`}>
                         {loading ? <LoadingSkeleton height={240} /> : (
                             data?.topCustomers && data.topCustomers.length > 0 ? (
                                 <div style={{ overflowX: 'auto' }}>
@@ -601,7 +602,7 @@ export default function Home() {
                                 { label: 'Net Profit', value: `LKR ${fmtFull(kpis?.netProfit ?? 0)}`, color: (kpis?.netProfit ?? 0) >= 0 ? '#10b981' : '#f97316', icon: (kpis?.netProfit ?? 0) >= 0 ? '✅' : '⚠️' },
                                 { label: 'Profit Margin', value: `${(kpis?.profitMargin ?? 0).toFixed(1)}%`, color: '#a855f7', icon: '🎯' },
                                 { label: 'Expense Ratio', value: `${kpis?.totalSales ? ((kpis.totalExpenses / kpis.totalSales) * 100).toFixed(1) : '0.0'}%`, color: '#f59e0b', icon: '📊' },
-                                { label: 'Unique Customers', value: `${data?.topCustomers?.length ?? 0}`, color: '#0ea5e9', icon: '👥' },
+                                { label: 'Unique Customers', value: `${data?.uniqueCustomers ?? 0}`, color: '#0ea5e9', icon: '👥' },
                             ].map((item) => (
                                 <div key={item.label} style={{
                                     background: 'rgba(255,255,255,0.03)',

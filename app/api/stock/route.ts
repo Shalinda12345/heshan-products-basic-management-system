@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/app/db";
 import { products, stocks } from "@/app/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { toErrorResponse } from "@/app/lib/api-error";
 
 export const dynamic = "force-dynamic";
 
@@ -35,9 +36,10 @@ export async function GET() {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { product_id, quantity } = body;
+        const productId = Number(body.product_id);
+        const quantity = Number(body.quantity);
 
-        if (!product_id || quantity === undefined || quantity <= 0) {
+        if (!Number.isInteger(productId) || productId <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
             return NextResponse.json(
                 { error: "Product ID and a positive quantity are required." },
                 { status: 400 }
@@ -47,42 +49,33 @@ export async function POST(request: Request) {
         // Verify product exists in products table
         const [existingProduct] = await db.select()
             .from(products)
-            .where(eq(products.product_id, Number(product_id)));
+            .where(eq(products.product_id, productId));
 
         if (!existingProduct) {
             return NextResponse.json(
-                { error: `Product ID ${product_id} not found.` },
+                { error: `Product ID ${productId} not found.` },
                 { status: 404 }
             );
         }
 
         const result = await db.transaction(async (tx) => {
-            // Check if stock record already exists for the product
-            const [existingStock] = await tx.select()
-                .from(stocks)
-                .where(eq(stocks.product_id, Number(product_id)));
+            // Insert the first stock record or atomically add to the existing one (product_id is unique)
+            await tx.insert(stocks)
+                .values({ product_id: productId, quantity })
+                .onDuplicateKeyUpdate({ set: { quantity: sql`${stocks.quantity} + ${quantity}` } });
 
-            if (existingStock) {
-                // Atomically add quantity using SQL to prevent race conditions
-                await tx.update(stocks)
-                    .set({ quantity: sql`${stocks.quantity} + ${Number(quantity)}` })
-                    .where(eq(stocks.product_id, Number(product_id)));
-                return { product_id, quantity: Number(existingStock.quantity) + Number(quantity) };
-            } else {
-                // Insert a new stock record
-                await tx.insert(stocks).values({
-                    product_id: Number(product_id),
-                    quantity: Number(quantity),
-                });
-                return { product_id, quantity: Number(quantity) };
-            }
+            const [updated] = await tx.select({ quantity: stocks.quantity })
+                .from(stocks)
+                .where(eq(stocks.product_id, productId));
+
+            return { product_id: productId, quantity: Number(updated.quantity) };
         });
 
         return NextResponse.json({ success: true, data: result }, { status: 200 });
     } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        console.error("Failed to add stock: ", errorMessage);
-        return NextResponse.json({ error: errorMessage || "Internal Server Error" }, { status: 500 });
+        console.error("Failed to add stock: ", error);
+        const { message, status } = toErrorResponse(error);
+        return NextResponse.json({ error: message }, { status });
     }
 }
 

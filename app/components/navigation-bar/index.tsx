@@ -122,6 +122,7 @@ export default function Navbar() {
 
             <Link
               href="/"
+              onClick={() => setIsOpen(false)}
               className="block rounded-3xl bg-slate-900/80 px-4 py-3 transition duration-300 hover:bg-slate-800/90 hover:text-sky-300"
             >
               Home
@@ -129,6 +130,7 @@ export default function Navbar() {
 
             <Link
               href="/pages/sales"
+              onClick={() => setIsOpen(false)}
               className="block rounded-3xl bg-slate-900/80 px-4 py-3 transition duration-300 hover:bg-slate-800/90 hover:text-sky-300"
             >
               Sales
@@ -136,6 +138,7 @@ export default function Navbar() {
 
             <Link
               href="/pages/expenses"
+              onClick={() => setIsOpen(false)}
               className="block rounded-3xl bg-slate-900/80 px-4 py-3 transition duration-300 hover:bg-slate-800/90 hover:text-sky-300"
             >
               Expenses
@@ -143,6 +146,7 @@ export default function Navbar() {
 
             <Link
               href="/pages/stock"
+              onClick={() => setIsOpen(false)}
               className="block rounded-3xl bg-slate-900/80 px-4 py-3 transition duration-300 hover:bg-slate-800/90 hover:text-sky-300"
             >
               Stock

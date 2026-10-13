@@ -1,7 +1,7 @@
 "use client";
 
-import SalesNavigation from '@/app/components/sales/sales-navigation/page';
-import ItemsSoldSummary from '@/app/components/sales/items-sold-summary/page';
+import SalesNavigation from '@/app/components/sales/sales-navigation';
+import ItemsSoldSummary from '@/app/components/sales/items-sold-summary';
 import React, { useEffect, useState } from 'react';
 
 interface Sale {
@@ -74,7 +74,7 @@ export default function DailySales() {
 
   const filteredSales = dailySales.filter(sale =>
     sale.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    `#d-sal-${sale.sale_id}`.includes(searchQuery.toLowerCase())
+    `#sal-${sale.sale_id}`.includes(searchQuery.toLowerCase())
   );
 
   const totalRevenue = filteredSales.reduce((sum, s) => sum + Number(s.grand_total), 0);

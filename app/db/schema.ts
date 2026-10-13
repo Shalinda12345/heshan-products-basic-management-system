@@ -46,6 +46,8 @@ export const expenses_list = mysqlTable('expenses_list', {
 export const expenses = mysqlTable('expenses', {
     expense_item_id: serial('expense_item_id').notNull().primaryKey(),
     expense_name: varchar('expense_name', { length: 255 }).notNull(),
+    // Employee paid, for Salary / Salary Advance / Salary Loan entries
+    employee_name: varchar('employee_name', { length: 255 }),
     quantity: double('quantity', { precision: 10, scale: 2 }),
     per_expense_amount: double('per_expense_amount', { precision: 10, scale: 2 }).notNull(),
     total: double('total', { precision: 10, scale: 2 }).notNull(),

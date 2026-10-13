@@ -3,8 +3,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 
 import "./globals.css";
-import NavigationBar from "./components/navigation-bar/page";
+import NavigationBar from "./components/navigation-bar";
 import SessionChecker from "./components/session-checker";
+import { SESSION_COOKIE, verifySessionToken } from "./lib/session";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,7 +30,7 @@ export default async function RootLayout({
 
   const cookieStore = await cookies();
 
-  const loggedIn = cookieStore.has("auth_token");
+  const loggedIn = await verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value);
 
   return (
     <html

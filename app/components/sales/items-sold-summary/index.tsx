@@ -260,6 +260,9 @@ export default function ItemsSoldSummary({
                             onChange={(yr, mo) => {
                                 setLocalYear(yr);
                                 setLocalMonth(mo);
+                                // A date range takes precedence over the month, so clear it when a month is picked
+                                setLocalStartDate('');
+                                setLocalEndDate('');
                             }}
                         />
                     </div>

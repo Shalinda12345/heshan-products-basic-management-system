@@ -1,11 +1,12 @@
 "use client";
 
-import ExpensesNavigation from "@/app/components/expenses/expenses-navigation/page";
+import ExpensesNavigation from "@/app/components/expenses/expenses-navigation";
 import { useEffect, useState, useMemo } from "react";
 
 interface Expense {
     expense_item_id: number;
     expense_name: string;
+    employee_name: string | null;
     quantity: number;
     per_expense_amount: number;
     total: number;
@@ -51,6 +52,7 @@ export default function WeeklyExpenses() {
 
     const filteredExpenses = weeklyExpenses.filter(expense => 
         expense.expense_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (expense.employee_name ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
         `#w-exp-${expense.expense_item_id}`.includes(searchQuery.toLowerCase())
     );
 
@@ -142,7 +144,12 @@ export default function WeeklyExpenses() {
                                     {filteredExpenses.map((expense) => (
                                         <tr key={expense.expense_item_id} className="hover:bg-slate-800/40 transition-colors">
                                             <td className="px-6 py-4 font-mono text-xs text-slate-400 font-semibold">#W-EXP-{expense.expense_item_id}</td>
-                                            <td className="px-6 py-4 font-bold text-white">{expense.expense_name}</td>
+                                            <td className="px-6 py-4 font-bold text-white">
+                                                {expense.expense_name}
+                                                {expense.employee_name && (
+                                                    <span className="block text-xs font-medium text-slate-400">{expense.employee_name}</span>
+                                                )}
+                                            </td>
                                             <td className="px-6 py-4 text-right font-mono text-slate-400 text-xs">
                                                 {expense.quantity && expense.quantity > 1 ? (
                                                     <span>{expense.quantity} × Rs.{expense.per_expense_amount.toFixed(2)}</span>

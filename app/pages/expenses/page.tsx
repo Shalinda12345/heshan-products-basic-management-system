@@ -1,7 +1,7 @@
 'use client';
 
-import ExpensesNavigation from "@/app/components/expenses/expenses-navigation/page";
-import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert/page';
+import ExpensesNavigation from "@/app/components/expenses/expenses-navigation";
+import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert';
 import React, { useEffect, useState, FormEvent } from "react";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -9,6 +9,7 @@ import React, { useEffect, useState, FormEvent } from "react";
 interface Expense {
     expense_item_id: number;
     expense_name: string;
+    employee_name: string | null;
     quantity: number;
     per_expense_amount: number;
     total: number;
@@ -118,6 +119,7 @@ export default function ExpensesPage() {
     const saleReturnExpenseTotal = saleReturnQuantity * saleReturnExpensePrice;
 
     const requiresQuantity = ["Milk Packet(900ml)", "Sugar", "Watalappan Cup", "Drink Cup"].includes(expenseName);
+    const isSalaryType = ["Salary", "Salary Advance", "Salary Loan"].includes(expenseName);
     const calculatedTotal = requiresQuantity ? quantityPerProduct * amount : amount;
 
     // ── Reset helper — clears all return-specific fields ─────────────────────
@@ -446,6 +448,10 @@ export default function ExpensesPage() {
             showAlert('warning', 'Missing Fields', 'Please fill in all required fields with positive values.');
             return;
         }
+        if (isSalaryType && !employeeName) {
+            showAlert('warning', 'Missing Employee', `Please choose the employee for this ${expenseName} entry.`);
+            return;
+        }
 
         setIsSubmitting(true);
         setLoadingRecent(true);
@@ -456,6 +462,7 @@ export default function ExpensesPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     expense_name: expenseName,
+                    employee_name: isSalaryType ? employeeName : undefined,
                     quantity: requiresQuantity ? quantityPerProduct : 1,
                     per_expense_amount: amount,
                     total: calculatedTotal,
@@ -468,8 +475,15 @@ export default function ExpensesPage() {
             if (response.ok && result.success) {
                 await fetchRecentExpenses();
                 setExpenseName("");
+                setEmployeeName("");
                 setQuantityPerProduct(0);
                 setAmount(0);
+                // Confirm explicitly: entries dated other than today don't show up in Today's ledger
+                showAlert(
+                    'success',
+                    'Expense Saved',
+                    `"${expenseName}"${isSalaryType ? ` for ${employeeName}` : ""} — Rs. ${calculatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} recorded on ${expenseDate}.`
+                );
             } else {
                 showAlert('error', 'Save Failed', result.message || 'Failed to save data to the database.');
                 setLoadingRecent(false);
@@ -569,6 +583,7 @@ export default function ExpensesPage() {
                                         value={expenseName}
                                         onChange={(e) => {
                                             setExpenseName(e.target.value);
+                                            setEmployeeName("");
                                             setQuantityPerProduct(0);
                                             setAmount(0);
                                             resetReturnFields();
@@ -964,7 +979,7 @@ export default function ExpensesPage() {
                                     </div>
                                 </div>
                             ) : (
-                                expenseName !== "" && expenseName !== "Salary" && expenseName !== "Return" && !requiresQuantity && (
+                                expenseName !== "" && !isSalaryType && expenseName !== "Return" && !requiresQuantity && (
                                     <div>
                                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
                                             Expense Amount (Rs.)
@@ -984,7 +999,7 @@ export default function ExpensesPage() {
                             )}
 
                             {/* Salary picker */}
-                            {(expenseName === "Salary" || expenseName === "Salary Advance" || expenseName === "Salary Loan") && (
+                            {isSalaryType && (
                                 <div>
                                     <select
                                         value={employeeName}
@@ -1103,7 +1118,12 @@ export default function ExpensesPage() {
                                             {recentExpenses.map((expense) => (
                                                 <tr key={expense.expense_item_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors">
                                                     <td className="px-5 py-3.5 font-mono text-slate-400 text-[10px]">#EXP-{expense.expense_item_id}</td>
-                                                    <td className="px-5 py-3.5 font-bold text-slate-900 dark:text-white">{expense.expense_name}</td>
+                                                    <td className="px-5 py-3.5 font-bold text-slate-900 dark:text-white">
+                                                        {expense.expense_name}
+                                                        {expense.employee_name && (
+                                                            <span className="block text-[11px] font-medium text-slate-400">{expense.employee_name}</span>
+                                                        )}
+                                                    </td>
                                                     <td className="px-5 py-3.5 text-right font-mono text-slate-400 text-[11px]">
                                                         {expense.quantity && expense.quantity > 1 ? (
                                                             <span>{expense.quantity} × Rs.{expense.per_expense_amount.toFixed(2)}</span>

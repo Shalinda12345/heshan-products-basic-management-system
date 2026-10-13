@@ -1,8 +1,11 @@
 /**
  * run-migration.ts
- * Creates the `returns` table in MySQL if it does not already exist.
- * Run with: npx ts-node --project tsconfig.json app/run-migration.ts
- *  OR:       npx tsx app/run-migration.ts
+ * Brings an existing database up to date with app/db/schema.ts. Safe to run more than once:
+ *   - creates the `returns` table if it does not already exist
+ *   - adds the `expenses.employee_name` column if it does not already exist
+ *
+ * DATABASE_URL must point at the database to migrate. Run with:
+ *   npx tsx --env-file=.env.local app/run-migration.ts
  */
 import { db } from "./db";
 import { sql } from "drizzle-orm";
@@ -26,7 +29,27 @@ async function migrate() {
         )
     `);
 
-    console.log("`returns` table created (or already exists). Migration complete.");
+    console.log("`returns` table created (or already exists).");
+
+    console.log("Running migration: adding `expenses.employee_name` column...");
+
+    const [rows] = await db.execute(sql`
+        SELECT COUNT(*) AS column_count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'expenses' AND COLUMN_NAME = 'employee_name'
+    `);
+    const [{ column_count }] = rows as unknown as { column_count: number }[];
+
+    if (Number(column_count) === 0) {
+        await db.execute(sql`
+            ALTER TABLE \`expenses\` ADD COLUMN \`employee_name\` VARCHAR(255) NULL AFTER \`expense_name\`
+        `);
+        console.log("`expenses.employee_name` column added.");
+    } else {
+        console.log("`expenses.employee_name` column already exists.");
+    }
+
+    console.log("Migration complete.");
     process.exit(0);
 }
 
