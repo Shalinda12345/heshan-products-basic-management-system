@@ -38,6 +38,15 @@ describe("POST /api/sales/save-sales", () => {
         expect(await stockOf(2)).toBe(48);
     });
 
+    it("records who posted the invoice and when", async () => {
+        const { body } = await post(saveSale, "/api/sales/save-sales", invoice(), { as: "staff" });
+        const [sale] = await query<{ created_by: number; created_at: string | null; status: string }>(
+            "SELECT created_by, created_at, status FROM sales WHERE sale_id = ?", [body.sale_id]
+        );
+        expect(sale).toMatchObject({ created_by: 4, status: "posted" });
+        expect(sale.created_at).not.toBeNull();
+    });
+
     it("trims the customer name and stores the date exactly as entered", async () => {
         const { body } = await post(saveSale, "/api/sales/save-sales", invoice({ customer_name: "  Kamal Stores  ", sale_date: "2026-01-31" }));
         const [sale] = await query("SELECT customer_name, sale_date FROM sales WHERE sale_id = ?", [body.sale_id]);
