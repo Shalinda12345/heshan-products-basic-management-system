@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/app/db";
 import { products, stocks, stock_movements } from "@/app/db/schema";
 import { and, eq, ne, sql } from "drizzle-orm";
-import { toErrorResponse } from "@/app/lib/api-error";
+import { toErrorResponse, toReadErrorResponse } from "@/app/lib/api-error";
 import { isIsoDate, parseLocalDate } from "@/app/lib/dates";
 import { MANUAL_MOVEMENT_TYPES, MOVEMENT_TYPES, type MovementType, type StockDirection } from "@/app/lib/stock";
 import { applyStockMovement } from "@/app/services/stockLedger";
@@ -56,7 +56,8 @@ export async function GET() {
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
         console.error("Failed to fetch stock status: ", errorMessage);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        const { message, status } = toReadErrorResponse(error);
+        return NextResponse.json({ error: message }, { status });
     }
 }
 

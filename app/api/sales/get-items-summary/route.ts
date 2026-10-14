@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/app/db";
 import { sales, sale_items } from "@/app/db/schema";
 import { and, gte, lte, eq, sql, desc } from "drizzle-orm";
+import { toReadErrorResponse } from "@/app/lib/api-error";
 
 export const dynamic = "force-dynamic";
 
@@ -231,9 +232,7 @@ export async function GET(request: Request) {
         });
     } catch (error) {
         console.error("Failed to fetch items sold summary:", error);
-        return NextResponse.json(
-            { error: "Internal Server Error" },
-            { status: 500 }
-        );
+        const { message, status } = toReadErrorResponse(error);
+        return NextResponse.json({ error: message }, { status });
     }
 }
