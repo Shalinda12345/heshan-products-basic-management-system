@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server";
-import { db } from "@/app/db";
-import { expenses_list } from "@/app/db/schema";
-import { toReadErrorResponse } from "@/app/lib/api-error";
-
+import { authorize } from "@/app/lib/auth";
+import { readErrorJson } from "@/app/lib/api-error";
+import { listExpenseCategories } from "@/app/services/expenseCategories";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(){
-    try{
-        const allExpenseItemsList = await db.select().from(expenses_list);
-        return NextResponse.json(allExpenseItemsList);
+// GET /api/expenses/get-expense-item-list — the active expense categories, with how each is entered (kind)
+export async function GET(request: Request) {
+    const auth = await authorize(request);
+    if (!auth.ok) return auth.response;
+    try {
+        return NextResponse.json(await listExpenseCategories(), { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
-        console.error("Failed to fetch Expense Items: ", error);
-        const { message, status } = toReadErrorResponse(error);
-        return NextResponse.json({ error: message }, { status });
+        return readErrorJson(error, "Failed to fetch Expense Items: ");
     }
 }

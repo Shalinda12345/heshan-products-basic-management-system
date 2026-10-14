@@ -3,10 +3,14 @@ import { db } from "@/app/db";
 import { expenses } from "@/app/db/schema";
 import { and, gte, lte, desc } from "drizzle-orm";
 import { toReadErrorResponse } from "@/app/lib/api-error";
+import { authorize } from "@/app/lib/auth";
+import { postedExpense } from "@/app/services/expenses";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+    const auth = await authorize(request, "expenses.view");
+    if (!auth.ok) return auth.response;
     try {
         const { searchParams } = new URL(request.url);
         const now = new Date();
@@ -26,7 +30,8 @@ export async function GET(request: Request) {
             .where(
                 and(
                     gte(expenses.expense_date, startOfMonth),
-                    lte(expenses.expense_date, endOfMonth)
+                    lte(expenses.expense_date, endOfMonth),
+                    postedExpense
                 )
             )
             .orderBy(desc(expenses.expense_date));

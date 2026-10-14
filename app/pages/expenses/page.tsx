@@ -2,7 +2,9 @@
 
 import ExpensesNavigation from "@/app/components/expenses/expenses-navigation";
 import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert';
+import { usePermissions } from "@/app/components/auth/user-provider";
 import { responseErrorMessage } from "@/app/lib/fetch-error";
+import type { ExpenseKind } from "@/app/lib/expense-kinds";
 import React, { useEffect, useState, FormEvent } from "react";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -20,6 +22,8 @@ interface Expense {
 interface Expense_Item_List {
     expense_id: number;
     expense_name: string;
+    // How the category is entered (set on the Manage → Expense Categories page)
+    kind: ExpenseKind;
 }
 
 interface Employees {
@@ -32,6 +36,7 @@ interface StockItem {
     product_name: string;
     description: string;
     quantity: number;
+    is_active?: boolean;
 }
 
 interface Sale {
@@ -59,6 +64,7 @@ type ReturnType =
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ExpensesPage() {
+    const { can } = usePermissions();
     // ── General form state ────────────────────────────────────────────────────
     const [expenseName, setExpenseName] = useState("");
     const [allExpenseItems, setAllExpenseItems] = useState<Expense_Item_List[]>([]);
@@ -119,8 +125,12 @@ export default function ExpensesPage() {
     const saleReturnTotal = saleReturnQuantity * saleReturnPrice;
     const saleReturnExpenseTotal = saleReturnQuantity * saleReturnExpensePrice;
 
-    const requiresQuantity = ["Milk Packet(900ml)", "Sugar", "Watalappan Cup", "Drink Cup"].includes(expenseName);
-    const isSalaryType = ["Salary", "Salary Advance", "Salary Loan"].includes(expenseName);
+    const selectedKind = allExpenseItems.find((item) => item.expense_name === expenseName)?.kind;
+    const requiresQuantity = selectedKind === "quantity";
+    const isSalaryType = selectedKind === "salary";
+    const isReturn = selectedKind === "return";
+    // Returns change invoices and stock, so only roles that manage returns see that category
+    const expenseOptions = allExpenseItems.filter((item) => item.kind !== "return" || can("returns.manage"));
     const calculatedTotal = requiresQuantity ? quantityPerProduct * amount : amount;
 
     // ── Reset helper — clears all return-specific fields ─────────────────────
@@ -158,8 +168,8 @@ export default function ExpensesPage() {
         try {
             const response = await fetch("/api/stock", { cache: "no-store" });
             if (!response.ok) throw new Error("Failed to fetch stock");
-            const data = await response.json();
-            setAllStockItems(data);
+            const data: StockItem[] = await response.json();
+            setAllStockItems(data.filter((item) => item.is_active !== false));
         } catch (error) {
             console.error("Error fetching stock items:", error);
         }
@@ -207,8 +217,8 @@ export default function ExpensesPage() {
                     if (isMounted) setRecentExpenses(data);
                 }
                 if (stockRes.ok) {
-                    const data = await stockRes.json();
-                    if (isMounted) setAllStockItems(data);
+                    const data: StockItem[] = await stockRes.json();
+                    if (isMounted) setAllStockItems(data.filter((item) => item.is_active !== false));
                 }
 
                 // Say why the lists are empty, rather than leaving a form that can't be filled in
@@ -274,7 +284,7 @@ export default function ExpensesPage() {
         e.preventDefault();
 
         // ── Return branch ─────────────────────────────────────────────────────
-        if (expenseName === "Return") {
+        if (isReturn) {
             if (!returnType) {
                 showAlert('warning', 'Select Return Type', 'Please choose a Return Type to proceed.');
                 return;
@@ -603,7 +613,7 @@ export default function ExpensesPage() {
                                         required
                                     >
                                         <option value="">Choose item type</option>
-                                        {allExpenseItems.map((expense) => (
+                                        {expenseOptions.map((expense) => (
                                             <option key={expense.expense_id} value={expense.expense_name}>
                                                 {expense.expense_name}
                                             </option>
@@ -614,7 +624,7 @@ export default function ExpensesPage() {
                                 {/* ════════════════════════════════════════════════
                                     RETURN sub-panel — shown only when "Return" selected
                                     ════════════════════════════════════════════════ */}
-                                {expenseName === "Return" && (
+                                {isReturn && (
                                     <div className="mt-4 space-y-4">
 
                                         {/* ── Return Type Selector ─────────────────── */}
@@ -957,7 +967,7 @@ export default function ExpensesPage() {
                             </div>
 
                             {/* Normal Expense: Quantity + Amount (for quantity-based items) */}
-                            {requiresQuantity && expenseName !== "Return" ? (
+                            {requiresQuantity ? (
                                 <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
@@ -994,7 +1004,7 @@ export default function ExpensesPage() {
                                     </div>
                                 </div>
                             ) : (
-                                expenseName !== "" && !isSalaryType && expenseName !== "Return" && !requiresQuantity && (
+                                expenseName !== "" && !isSalaryType && !isReturn && !requiresQuantity && (
                                     <div>
                                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
                                             Expense Amount (Rs.)
@@ -1071,7 +1081,7 @@ export default function ExpensesPage() {
                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                                                 </svg>
                                                 <span>
-                                                    {expenseName === "Return"
+                                                    {isReturn
                                                         ? returnType ? `Submit ${returnTypeLabel[returnType] ?? "Return"}` : "Submit Return"
                                                         : "Post Expenditure Entry"}
                                                 </span>

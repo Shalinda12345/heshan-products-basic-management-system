@@ -1,13 +1,25 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE, verifySessionToken } from "@/app/lib/session";
+import { SESSION_COOKIE } from "@/app/lib/session";
+import { cookieFromHeader, userForToken } from "@/app/lib/auth";
+import { toReadErrorResponse } from "@/app/lib/api-error";
 
-export async function GET() {
-    const cookieStore = await cookies();
+export const dynamic = "force-dynamic";
 
-    const loggedIn = await verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value);
+// Polled by the pages: is this browser's session still good? A session whose user was disabled, or whose
+// password was changed elsewhere, gets its cookie cleared here so the browser goes back to the login page.
+export async function GET(request: Request) {
+    const token = cookieFromHeader(request.headers.get("cookie"), SESSION_COOKIE);
+    if (!token) return NextResponse.json({ authenticated: false }, { headers: { "Cache-Control": "no-store" } });
 
-    return NextResponse.json({
-        authenticated: loggedIn,
-    });
+    try {
+        const user = await userForToken(token);
+        const response = NextResponse.json({ authenticated: !!user }, { headers: { "Cache-Control": "no-store" } });
+        if (!user) response.cookies.delete(SESSION_COOKIE);
+        return response;
+    } catch (error) {
+        // The database can't be asked right now: say so rather than signing everyone out
+        console.error("Session check failed:", error);
+        const { message, status } = toReadErrorResponse(error);
+        return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
+    }
 }

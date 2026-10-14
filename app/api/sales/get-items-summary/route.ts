@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/app/db";
-import { sales, sale_items } from "@/app/db/schema";
+import { products, sales, sale_items } from "@/app/db/schema";
 import { and, gte, lte, eq, sql, desc } from "drizzle-orm";
 import { toReadErrorResponse } from "@/app/lib/api-error";
+import { authorize } from "@/app/lib/auth";
+import { postedSale } from "@/app/services/sales";
 
 export const dynamic = "force-dynamic";
 
@@ -127,6 +129,8 @@ function getDateRange(
 }
 
 export async function GET(request: Request) {
+    const auth = await authorize(request, "sales.view");
+    if (!auth.ok) return auth.response;
     try {
         const { searchParams } = new URL(request.url);
         const timeframe = (searchParams.get("timeframe") || searchParams.get("period") || "daily").toLowerCase();
@@ -144,10 +148,12 @@ export async function GET(request: Request) {
             date,
         });
 
-        // Query aggregated items sold within date range
+        // Query aggregated items sold within date range. Lines are grouped by product, so a product that was
+        // renamed keeps one row (under its current name); lines from before products were linked group by name.
+        const productKey = sql`COALESCE(CONCAT('id:', ${sale_items.product_id}), CONCAT('name:', ${sale_items.product_name}))`;
         const rawItems = await db
             .select({
-                product_name: sale_items.product_name,
+                product_name: sql<string>`MAX(COALESCE(${products.product_name}, ${sale_items.product_name}))`,
                 total_quantity: sql<number>`COALESCE(SUM(${sale_items.quantity}), 0)`,
                 total_revenue: sql<number>`COALESCE(SUM(${sale_items.total}), 0)`,
                 orders_count: sql<number>`COUNT(DISTINCT ${sale_items.sale_id})`,
@@ -157,13 +163,15 @@ export async function GET(request: Request) {
             })
             .from(sale_items)
             .innerJoin(sales, eq(sale_items.sale_id, sales.sale_id))
+            .leftJoin(products, eq(products.product_id, sale_items.product_id))
             .where(
                 and(
                     gte(sales.sale_date, start),
-                    lte(sales.sale_date, end)
+                    lte(sales.sale_date, end),
+                    postedSale
                 )
             )
-            .groupBy(sale_items.product_name)
+            .groupBy(productKey)
             .orderBy(desc(sql`SUM(${sale_items.quantity})`));
 
         // Format numbers cleanly

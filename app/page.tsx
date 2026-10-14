@@ -5,6 +5,8 @@ import Link from 'next/link';
 import MonthSelector, { MONTH_NAMES } from '@/app/components/ui/month-selector';
 import { backgroundFetch, useLiveRefresh } from '@/app/lib/use-live-refresh';
 import { stockStatus } from '@/app/lib/stock';
+import { ChangeIndicator } from '@/app/components/ui/feedback';
+import { formatMoneyChange, percentChange, percentChangeOfPositive } from '@/app/lib/format';
 import {
     AreaChart, Area, BarChart, Bar, LineChart, Line,
     PieChart, Pie, Cell,
@@ -42,6 +44,8 @@ interface StockItem {
     quantity: number;
     today_in: number;
     today_out: number;
+    reorder_level: number | null;
+    is_active: boolean;
 }
 
 interface DashboardData {
@@ -51,6 +55,8 @@ interface DashboardData {
     expenseBreakdown: ExpenseCategory[];
     topCustomers: TopCustomer[];
     uniqueCustomers: number;
+    // The same figures for the comparable earlier period (null for the multi-year view)
+    comparison: { from: string; to: string; label: string; kpis: KPIs } | null;
 }
 
 // ─── Period config ────────────────────────────────────────────────────────────
@@ -69,6 +75,12 @@ const PIE_COLORS = [
 ];
 
 // ─── Number helpers ───────────────────────────────────────────────────────────
+// A change in a percentage, in percentage points: "+3.2 pts"
+function formatPoints(n: number) {
+    const rounded = Math.round(n * 10) / 10;
+    return `${rounded > 0 ? '+' : rounded < 0 ? '−' : ''}${Math.abs(rounded).toFixed(1)} pts`;
+}
+
 function fmt(n: number) {
     if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     if (Math.abs(n) >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
@@ -155,9 +167,10 @@ function PieLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }: {
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
 // `isLoading` shows a shimmer overlay instead of zeroing the value out.
-function KpiCard({ title, value, prefix, suffix, color, icon, trend, isLoading }: {
+function KpiCard({ title, value, prefix, suffix, color, icon, trend, isLoading, change, upIsGood = true, changeFormat, comparisonLabel }: {
     title: string; value: number; prefix?: string; suffix?: string;
     color: string; icon: string; trend?: string; isLoading?: boolean;
+    change?: number | null; upIsGood?: boolean; changeFormat?: (n: number) => string; comparisonLabel?: string;
 }) {
     const animated = useAnimatedCount(value);
     return (
@@ -200,6 +213,11 @@ function KpiCard({ title, value, prefix, suffix, color, icon, trend, isLoading }
             <p style={{ color: '#f1f5f9', fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', opacity: isLoading ? 0.5 : 1, transition: 'opacity 0.3s' }}>
                 {prefix}<span>{fmt(animated)}</span>{suffix}
             </p>
+            {comparisonLabel !== undefined && (
+                <p style={{ marginTop: 8 }}>
+                    <ChangeIndicator change={change} upIsGood={upIsGood} format={changeFormat} suffix={comparisonLabel} />
+                </p>
+            )}
             {trend && <p style={{ color: '#64748b', fontSize: 12, marginTop: 8 }}>{trend}</p>}
         </div>
     );
@@ -305,7 +323,7 @@ export default function Home() {
     useLiveRefresh(refreshStock, 15000);
 
     const stockAlerts = (stock ?? [])
-        .filter(item => stockStatus(item.quantity) !== 'ok')
+        .filter(item => item.is_active && stockStatus(item.quantity, item.reorder_level) !== 'ok')
         .sort((a, b) => a.quantity - b.quantity);
     const stockTodayIn = (stock ?? []).reduce((sum, item) => sum + item.today_in, 0);
     const stockTodayOut = (stock ?? []).reduce((sum, item) => sum + item.today_out, 0);
@@ -315,6 +333,9 @@ export default function Home() {
     const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
     const kpis = data?.kpis;
+    const prev = data?.comparison?.kpis;
+    // Shown under each KPI; undefined hides the comparison (multi-year view)
+    const comparisonLabel = data?.comparison ? data.comparison.label : period === 'multi' ? undefined : '';
     const chartData = data?.chartData ?? [];
 
     // ─── Profit gradient stops for area chart
@@ -426,10 +447,16 @@ export default function Home() {
 
                 {/* ═══ KPI Cards ═══════════════════════════════════════════════ */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 20, marginBottom: 40 }}>
-                    <KpiCard title="Total Revenue"  value={kpis?.totalSales     ?? 0} icon="💰" color="#3b82f6" prefix="LKR " trend="Gross sales in selected period" isLoading={loading} />
-                    <KpiCard title="Total Expenses" value={kpis?.totalExpenses  ?? 0} icon="📊" color="#ef4444" prefix="LKR " trend="All costs in selected period"    isLoading={loading} />
-                    <KpiCard title="Net Profit"     value={kpis?.netProfit      ?? 0} icon="📈" color="#10b981" prefix="LKR " trend="Revenue minus expenses"           isLoading={loading} />
-                    <KpiCard title="Profit Margin"  value={kpis?.profitMargin   ?? 0} icon="🎯" color="#a855f7" suffix="%"   trend="Net profit as % of revenue"      isLoading={loading} />
+                    <KpiCard title="Total Revenue"  value={kpis?.totalSales     ?? 0} icon="💰" color="#3b82f6" prefix="LKR " trend="Sales in selected period, after returns" isLoading={loading}
+                        change={kpis && prev ? percentChange(kpis.totalSales, prev.totalSales) : null} comparisonLabel={comparisonLabel} />
+                    <KpiCard title="Total Expenses" value={kpis?.totalExpenses  ?? 0} icon="📊" color="#ef4444" prefix="LKR " trend="All costs in selected period" isLoading={loading}
+                        change={kpis && prev ? percentChange(kpis.totalExpenses, prev.totalExpenses) : null} upIsGood={false} comparisonLabel={comparisonLabel} />
+                    <KpiCard title="Net Profit"     value={kpis?.netProfit      ?? 0} icon="📈" color="#10b981" prefix="LKR " trend="Revenue minus expenses" isLoading={loading}
+                        change={kpis && prev ? percentChangeOfPositive(kpis.netProfit, prev.netProfit) ?? kpis.netProfit - prev.netProfit : null}
+                        changeFormat={kpis && prev && percentChangeOfPositive(kpis.netProfit, prev.netProfit) === null ? formatMoneyChange : undefined}
+                        comparisonLabel={comparisonLabel} />
+                    <KpiCard title="Profit Margin"  value={kpis?.profitMargin   ?? 0} icon="🎯" color="#a855f7" suffix="%"   trend="Net profit as % of revenue" isLoading={loading}
+                        change={kpis && prev ? kpis.profitMargin - prev.profitMargin : null} changeFormat={formatPoints} comparisonLabel={comparisonLabel} />
                 </div>
 
                 {/* ═══ Stock Watch (live) ══════════════════════════════════════ */}
@@ -440,8 +467,8 @@ export default function Home() {
                                 {[
                                     { label: 'Units In Today', value: `+${stockTodayIn.toLocaleString()}`, color: '#10b981' },
                                     { label: 'Units Out Today', value: `−${stockTodayOut.toLocaleString()}`, color: '#f43f5e' },
-                                    { label: 'Low Stock', value: String(stockAlerts.filter(i => stockStatus(i.quantity) === 'low').length), color: '#f59e0b' },
-                                    { label: 'Out of Stock', value: String(stockAlerts.filter(i => stockStatus(i.quantity) === 'out').length), color: '#ef4444' },
+                                    { label: 'Low Stock', value: String(stockAlerts.filter(i => stockStatus(i.quantity, i.reorder_level) === 'low').length), color: '#f59e0b' },
+                                    { label: 'Out of Stock', value: String(stockAlerts.filter(i => stockStatus(i.quantity, i.reorder_level) === 'out').length), color: '#ef4444' },
                                 ].map(tile => (
                                     <div key={tile.label} style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${tile.color}22`, borderRadius: 14, padding: '14px 16px' }}>
                                         <p style={{ color: '#64748b', fontSize: 11, fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{tile.label}</p>
@@ -457,7 +484,7 @@ export default function Home() {
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
                                         {stockAlerts.map(item => {
-                                            const out = stockStatus(item.quantity) === 'out';
+                                            const out = stockStatus(item.quantity, item.reorder_level) === 'out';
                                             return (
                                                 <div key={item.product_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 14px', borderRadius: 12, background: out ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)', border: `1px solid ${out ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}` }}>
                                                     <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 14 }}>{item.product_name}</span>
@@ -609,7 +636,7 @@ export default function Home() {
                                     <Tooltip content={<CustomTooltip />} />
                                     <Legend iconType="circle" iconSize={8} wrapperStyle={{ paddingTop: 14, fontSize: 13, color: '#94a3b8' }} />
                                     <Line type="monotone" dataKey="sales"    name="Sales"    stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
-                                    <Line type="monotone" dataKey="expenses" name="Expenses" stroke="#ef4444" strokeWidth={2} dot={false} activeDot={{ r: 5 }} strokeDasharray="5 3" />
+                                    <Line type="monotone" dataKey="expenses" name="Expenses" stroke="#ef4444" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
                                     <Line type="monotone" dataKey="profit"   name="Net Profit" stroke="#10b981" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
                                 </LineChart>
                             </ResponsiveContainer>

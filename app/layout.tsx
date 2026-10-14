@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { cookies } from "next/headers";
 
 import "./globals.css";
 import NavigationBar from "./components/navigation-bar";
 import SessionChecker from "./components/session-checker";
-import { SESSION_COOKIE, verifySessionToken } from "./lib/session";
+import { UserProvider } from "./components/auth/user-provider";
+import { getCurrentUser, toUserInfo } from "./lib/auth";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,8 +18,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Basic Manager",
-  description: "Business Management System",
+  title: {
+    default: "Heshan Products — Business Manager",
+    template: "%s · Heshan Products",
+  },
+  description: "Sales, expenses, stock and reports for Heshan Products",
 };
 
 export default async function RootLayout({
@@ -28,9 +31,9 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
 
-  const cookieStore = await cookies();
-
-  const loggedIn = await verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value);
+  // The signed-in user, checked against the database (a disabled user gets no menus)
+  const user = await getCurrentUser();
+  const userInfo = user ? toUserInfo(user) : null;
 
   return (
     <html
@@ -38,12 +41,13 @@ export default async function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
       <body>
-        <SessionChecker />
+        <UserProvider user={userInfo}>
+          <SessionChecker />
 
-        {loggedIn && <NavigationBar />}
+          {userInfo && !userInfo.mustChangePassword && <NavigationBar />}
 
-        {children}
-
+          {children}
+        </UserProvider>
       </body>
     </html>
   );

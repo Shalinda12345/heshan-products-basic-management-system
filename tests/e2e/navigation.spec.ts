@@ -1,10 +1,10 @@
-import { expect, test } from "./fixtures";
+import { expect, mainNav, test } from "./fixtures";
 
 test.describe("navigation", () => {
     test("navbar links reach every section", async ({ page }) => {
         await page.goto("/");
-        const nav = page.locator("nav");
-        for (const [name, path] of [["Sales", "/pages/sales"], ["Expenses", "/pages/expenses"], ["Stock", "/pages/stock"], ["Dashboard", "/"]]) {
+        const nav = mainNav(page);
+        for (const [name, path] of [["Sales", "/pages/sales"], ["Expenses", "/pages/expenses"], ["Stock", "/pages/stock"], ["Reports", "/reports"], ["Dashboard", "/"]]) {
             await nav.getByRole("link", { name, exact: true }).click();
             await expect(page).toHaveURL(new RegExp(`${path === "/" ? "/" : path}$`));
         }
@@ -47,7 +47,10 @@ test.describe("navigation", () => {
         await page.goto("/");
         await page.getByRole("button", { name: "Open main menu" }).click();
         const menu = page.locator("#mobile-menu");
-        await expect(menu.getByRole("link")).toHaveText(["Dashboard", "Sales", "Expenses", "Stock"]);
+        await expect(menu.getByRole("link")).toHaveText([
+            "Dashboard", "Sales", "Expenses", "Stock", "Reports",
+            "Products", "Customers", "Employees", "Expense Categories", "Users & Access", "Activity Log", "My account",
+        ]);
         await menu.getByRole("link", { name: "Stock" }).click();
         await expect(page).toHaveURL(/\/pages\/stock$/);
         await expect(menu).toHaveCount(0);

@@ -1,15 +1,16 @@
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
-import { SESSION_COOKIE, createSessionToken } from "@/app/lib/session";
-import { resetDatabase } from "../helpers/test-db";
+import { SESSION_COOKIE } from "@/app/lib/session";
+import { resetDatabase, sessionTokenFor, type TestUser } from "../helpers/test-db";
 
 export { expect };
 export type { Locator, Page };
 
 // Every test starts from freshly seeded data (an automatic fixture, so it runs before any beforeEach hook).
-// Tests are signed in unless they opt out with test.use({ signedIn: false }).
+// Tests are signed in as the seeded administrator unless they pick another user with test.use({ user: "staff" }),
+// or sign in nobody with test.use({ user: null }).
 // Fixture callbacks are named runTest rather than use, so the React Hooks lint rule does not misfire.
-export const test = base.extend<{ signedIn: boolean; freshDatabase: void }>({
-    signedIn: [true, { option: true }],
+export const test = base.extend<{ user: TestUser | null; freshDatabase: void }>({
+    user: ["admin", { option: true }],
     freshDatabase: [
         // Playwright requires the object pattern even when a fixture has no dependencies
         async ({}, runTest) => {
@@ -18,9 +19,9 @@ export const test = base.extend<{ signedIn: boolean; freshDatabase: void }>({
         },
         { auto: true },
     ],
-    page: async ({ page, context, baseURL, signedIn }, runTest) => {
-        if (signedIn) {
-            await context.addCookies([{ name: SESSION_COOKIE, value: await createSessionToken(), url: baseURL! }]);
+    page: async ({ page, context, baseURL, user }, runTest) => {
+        if (user) {
+            await context.addCookies([{ name: SESSION_COOKIE, value: await sessionTokenFor(user), url: baseURL! }]);
         }
         await runTest(page);
     },
@@ -54,4 +55,17 @@ export async function expectAlert(page: Page, title: string, message?: string | 
 // Formats an amount the way the pages do in the en-US locale (e.g. 4,380.00)
 export function money(amount: number): string {
     return amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Signs in through the login form
+export async function signIn(page: Page, username: string, password: string) {
+    await page.goto("/login");
+    await page.locator("#username").fill(username);
+    await page.locator("#password").fill(password);
+    await page.getByRole("button", { name: "Sign In" }).click();
+}
+
+// The main navigation bar (pages also have section tab bars, which are navs too)
+export function mainNav(page: Page): Locator {
+    return page.getByRole("navigation", { name: "Main" });
 }
