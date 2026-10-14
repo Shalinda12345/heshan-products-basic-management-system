@@ -3,6 +3,7 @@ import { db } from "@/app/db";
 import { stock_movements } from "@/app/db/schema";
 import { and, desc, eq, gte, lte, type SQL } from "drizzle-orm";
 import { isIsoDate, parseLocalDate } from "@/app/lib/dates";
+import { toReadErrorResponse } from "@/app/lib/api-error";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,7 @@ export async function GET(request: Request) {
         );
     } catch (error) {
         console.error("Failed to fetch stock movements:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        const { message, status } = toReadErrorResponse(error);
+        return NextResponse.json({ error: message }, { status });
     }
 }

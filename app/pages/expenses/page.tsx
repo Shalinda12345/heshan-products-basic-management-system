@@ -2,6 +2,7 @@
 
 import ExpensesNavigation from "@/app/components/expenses/expenses-navigation";
 import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert';
+import { responseErrorMessage } from "@/app/lib/fetch-error";
 import React, { useEffect, useState, FormEvent } from "react";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -209,8 +210,18 @@ export default function ExpensesPage() {
                     const data = await stockRes.json();
                     if (isMounted) setAllStockItems(data);
                 }
+
+                // Say why the lists are empty, rather than leaving a form that can't be filled in
+                const failed = [expItemsRes, empRes, recExpRes, stockRes].find((res) => !res.ok);
+                if (failed) {
+                    const message = await responseErrorMessage(failed, "Some data could not be loaded. Refresh the page to try again.");
+                    if (isMounted) setAlertState({ isOpen: true, variant: 'error', title: 'Could Not Load Data', message });
+                }
             } catch (err) {
                 console.error("Initialization error:", err);
+                if (isMounted) {
+                    setAlertState({ isOpen: true, variant: 'error', title: 'Network Error', message: 'Could not reach the server. Refresh the page to try again.' });
+                }
             } finally {
                 if (isMounted) {
                     setLoadingDropdown(false);

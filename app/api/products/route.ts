@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/app/db";
 import { products } from "@/app/db/schema";
+import { toReadErrorResponse } from "@/app/lib/api-error";
 
 
 export async function GET(){
@@ -9,9 +10,7 @@ export async function GET(){
         return NextResponse.json(allProducts);
     } catch (error) {
         console.error("Failed to fetch products: ", error);
-        return NextResponse.json(
-            {error: "Internal Server Error"},
-            {status: 500}
-        );
+        const { message, status } = toReadErrorResponse(error);
+        return NextResponse.json({ error: message }, { status });
     }
 }

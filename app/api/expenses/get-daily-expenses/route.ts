@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/app/db";
 import { expenses } from "@/app/db/schema";
 import { and, gte, lte } from "drizzle-orm";
+import { toReadErrorResponse } from "@/app/lib/api-error";
 
 export const dynamic = "force-dynamic";
 
@@ -37,9 +38,7 @@ export async function GET(request: Request){
         return NextResponse.json(dailyExpenses);
     } catch (error) {
         console.error("Failed to fetch daily expenses: ", error);
-        return NextResponse.json(
-            {error: "Internal Server Error"},
-            {status: 500}
-        );
+        const { message, status } = toReadErrorResponse(error);
+        return NextResponse.json({ error: message }, { status });
     }
 }

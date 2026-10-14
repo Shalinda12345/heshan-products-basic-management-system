@@ -4,6 +4,7 @@ import AddSalesPopup from '@/app/components/sales/add-sales-popup';
 import SalesNavigation from '@/app/components/sales/sales-navigation';
 import SalesInvoicePage from '@/app/components/sales/sales-invoice';
 import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert';
+import { responseErrorMessage } from '@/app/lib/fetch-error';
 import { backgroundFetch, useLiveRefresh } from '@/app/lib/use-live-refresh';
 
 type SaleItem = {
@@ -46,26 +47,33 @@ export default function SalesPage() {
     setAlertState(prev => ({ ...prev, isOpen: false }));
   };
 
-  const fetchStock = async () => {
+  // Returns why the stock levels couldn't be loaded, or null once they are
+  const fetchStock = async (): Promise<string | null> => {
     try {
       const response = await backgroundFetch("/api/stock");
 
       if (!response.ok) {
-        throw new Error("Failed to fetch stock");
+        return await responseErrorMessage(response, "The product list could not be loaded. Refresh the page to try again.");
       }
 
       const data = await response.json();
       setStockItems(data);
+      return null;
     } catch (error) {
       console.error("Error fetching stock:", error);
+      return "Could not reach the server. Refresh the page to try again.";
     }
   };
 
   useEffect(() => {
     async function loadData() {
       setLoading(true);
-      await fetchStock();
+      const problem = await fetchStock();
       setLoading(false);
+      // Without stock levels there are no products to sell, so say why
+      if (problem) {
+        setAlertState({ isOpen: true, variant: 'error', title: 'Could Not Load Products', message: problem });
+      }
     }
 
     loadData();

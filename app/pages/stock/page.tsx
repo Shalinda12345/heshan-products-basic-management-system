@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert';
 import { backgroundFetch, useLiveRefresh } from '@/app/lib/use-live-refresh';
+import { responseErrorMessage } from '@/app/lib/fetch-error';
 import { toIsoDate } from '@/app/lib/dates';
 import {
   LOW_STOCK_THRESHOLD,
@@ -103,7 +104,8 @@ export default function StockPage() {
         backgroundFetch('/api/stock'),
         backgroundFetch(`/api/stock/movements?${ledgerQuery}`),
       ]);
-      if (!stockRes.ok || !movementsRes.ok) throw new Error('Failed to fetch stock');
+      const failed = [stockRes, movementsRes].find(res => !res.ok);
+      if (failed) throw new Error(await responseErrorMessage(failed, 'Failed to retrieve stock levels.'));
       const [stockData, movementData]: [StockItem[], StockMovement[]] = await Promise.all([stockRes.json(), movementsRes.json()]);
 
       // Highlight movements that arrived since the previous refresh
@@ -132,8 +134,12 @@ export default function StockPage() {
   useEffect(() => {
     let cancelled = false;
     loadData()
-      .catch(() => {
-        if (!cancelled) showAlert('error', 'Error', 'Failed to retrieve stock levels.');
+      .catch((error: unknown) => {
+        // fetch() itself fails with a TypeError when the server can't be reached
+        const message = error instanceof TypeError
+          ? 'Could not reach the server. Refresh the page to try again.'
+          : error instanceof Error ? error.message : 'Failed to retrieve stock levels.';
+        if (!cancelled) showAlert('error', 'Could Not Load Stock', message);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

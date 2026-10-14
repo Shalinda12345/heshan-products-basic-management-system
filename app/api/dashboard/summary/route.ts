@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/app/db";
 import { sales, expenses } from "@/app/db/schema";
 import { and, gte, lte } from "drizzle-orm";
+import { toReadErrorResponse } from "@/app/lib/api-error";
 
 export const dynamic = "force-dynamic";
 
@@ -262,10 +263,11 @@ export async function GET(request: Request) {
         );
     } catch (error) {
         console.error("Dashboard summary error:", error);
+        const { message, status } = toReadErrorResponse(error);
         return NextResponse.json(
-            { error: "Internal Server Error" },
+            { error: message },
             {
-                status: 500,
+                status,
                 headers: { "Cache-Control": "no-store" },
             }
         );
