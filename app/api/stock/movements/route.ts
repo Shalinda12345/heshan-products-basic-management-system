@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/app/db";
-import { stock_movements } from "@/app/db/schema";
+import { stock_movements, users } from "@/app/db/schema";
 import { and, desc, eq, gte, lte, type SQL } from "drizzle-orm";
 import { isIsoDate, parseLocalDate } from "@/app/lib/dates";
 import { toReadErrorResponse } from "@/app/lib/api-error";
+import { authorize } from "@/app/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ const MAX_LIMIT = 500;
 //   ?from= &to=   inclusive business-date range (YYYY-MM-DD)
 //   ?limit=       1-500 rows (default 100)
 export async function GET(request: Request) {
+    const auth = await authorize(request, "stock.view");
+    if (!auth.ok) return auth.response;
     try {
         const { searchParams } = new URL(request.url);
         const productId = searchParams.get("product_id");
@@ -45,17 +48,19 @@ export async function GET(request: Request) {
         if (to) filters.push(lte(stock_movements.movement_date, parseLocalDate(to)));
 
         const rows = await db
-            .select()
+            .select({ movement: stock_movements, created_by_name: users.name })
             .from(stock_movements)
+            .leftJoin(users, eq(users.id, stock_movements.created_by))
             .where(filters.length ? and(...filters) : undefined)
             .orderBy(desc(stock_movements.movement_id))
             .limit(limit);
 
         return NextResponse.json(
-            rows.map((row) => ({
-                ...row,
-                quantity: Number(row.quantity),
-                balance_after: Number(row.balance_after),
+            rows.map(({ movement, created_by_name }) => ({
+                ...movement,
+                quantity: Number(movement.quantity),
+                balance_after: Number(movement.balance_after),
+                created_by_name,
             })),
             { headers: { "Cache-Control": "no-store" } }
         );

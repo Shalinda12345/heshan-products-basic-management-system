@@ -3,10 +3,13 @@ import { db } from "@/app/db";
 import { sale_items } from "@/app/db/schema";
 import { eq } from "drizzle-orm";
 import { toReadErrorResponse } from "@/app/lib/api-error";
+import { authorize } from "@/app/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+    const auth = await authorize(request, "sales.view");
+    if (!auth.ok) return auth.response;
     try {
         const { searchParams } = new URL(request.url);
         const saleId = searchParams.get("sale_id");

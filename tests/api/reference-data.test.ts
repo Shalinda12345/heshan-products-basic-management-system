@@ -16,7 +16,10 @@ describe("reference data", () => {
         const { status, body } = await get(getProducts, "/api/products");
         expect(status).toBe(200);
         expect(body).toHaveLength(6);
-        expect(body[0]).toEqual({ product_id: 1, product_name: "Watalappan", description: "Coconut custard pudding" });
+        expect(body[0]).toEqual({
+            product_id: 1, product_name: "Watalappan", description: "Coconut custard pudding",
+            unit_price: null, unit_cost: null, reorder_level: null, is_active: true,
+        });
     });
 
     it("lists employees (salary picker) wrapped in { success, data }", async () => {

@@ -3,14 +3,22 @@ import { db } from "@/app/db";
 import { products, stocks, stock_movements } from "@/app/db/schema";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { toErrorResponse, toReadErrorResponse } from "@/app/lib/api-error";
-import { isIsoDate, parseLocalDate } from "@/app/lib/dates";
-import { MANUAL_MOVEMENT_TYPES, MOVEMENT_TYPES, type MovementType, type StockDirection } from "@/app/lib/stock";
+import { actorOf, authorize } from "@/app/lib/auth";
+import { isIsoDate, parseLocalDate, toIsoDate } from "@/app/lib/dates";
+import { formatQty } from "@/app/lib/format";
+import { hasPermission } from "@/app/lib/permissions";
+import { MANUAL_MOVEMENT_TYPES, MOVEMENT_TYPES, movementLabel, type MovementType, type StockDirection } from "@/app/lib/stock";
+import { logActivity, requestInfo } from "@/app/services/activity";
 import { applyStockMovement } from "@/app/services/stockLedger";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/stock — every product with its current level and today's movement totals
-export async function GET() {
+// GET /api/stock — every product with its current level and today's movement totals.
+// Unit costs (for stock value) only go to those who see margins.
+export async function GET(request: Request) {
+    const auth = await authorize(request, "stock.view");
+    if (!auth.ok) return auth.response;
+    const showCost = hasPermission(auth.user.role, "reports.view");
     try {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -20,6 +28,10 @@ export async function GET() {
                 product_id: products.product_id,
                 product_name: products.product_name,
                 description: products.description,
+                unit_price: products.unit_price,
+                unit_cost: products.unit_cost,
+                reorder_level: products.reorder_level,
+                is_active: products.is_active,
                 quantity: stocks.quantity,
                 updated_at: stocks.updated_at,
             })
@@ -39,6 +51,7 @@ export async function GET() {
         ]);
 
         const totalsByProduct = new Map(todayTotals.map((row) => [row.product_id, row]));
+        const num = (v: number | null) => (v === null || v === undefined ? null : Number(v));
 
         return NextResponse.json(levels.map((row) => {
             const totals = totalsByProduct.get(row.product_id);
@@ -51,6 +64,10 @@ export async function GET() {
                 today_in: Number(totals?.stock_in ?? 0),
                 today_out: Number(totals?.stock_out ?? 0),
                 updated_at: row.updated_at ?? null,
+                unit_price: num(row.unit_price),
+                unit_cost: showCost ? num(row.unit_cost) : null,
+                reorder_level: num(row.reorder_level),
+                is_active: row.is_active,
             };
         }), { headers: { "Cache-Control": "no-store" } });
     } catch (error: unknown) {
@@ -64,6 +81,8 @@ export async function GET() {
 // POST /api/stock — record stock moving in or out by hand
 //   { product_id, quantity, direction?: "IN" | "OUT" (default IN), movement_type?, note?, movement_date?: "YYYY-MM-DD" }
 export async function POST(request: Request) {
+    const auth = await authorize(request, "stock.move");
+    if (!auth.ok) return auth.response;
     try {
         const body = await request.json();
         const productId = Number(body.product_id);
@@ -112,8 +131,9 @@ export async function POST(request: Request) {
             );
         }
 
-        const movement = await db.transaction((tx) =>
-            applyStockMovement(tx, {
+        const actor = actorOf(auth.user);
+        const movement = await db.transaction(async (tx) => {
+            const result = await applyStockMovement(tx, {
                 productId,
                 productName: existingProduct.product_name,
                 movementType,
@@ -121,8 +141,17 @@ export async function POST(request: Request) {
                 movementDate,
                 reference: "Manual entry",
                 note,
-            })
-        );
+                createdBy: actor.id,
+            });
+            await logActivity(tx, actor, {
+                action: "stock.movement",
+                summary: `Stock ${direction === "IN" ? "in" : "out"}: ${direction === "IN" ? "+" : "−"}${formatQty(quantity)} ${existingProduct.product_name} (${movementLabel(movementType)}), balance ${formatQty(result.balance)}${note ? `. Note: ${note}` : ""}`,
+                entityType: "product",
+                entityId: productId,
+                details: { movement_id: result.movementId, direction, movement_type: movementType, quantity, balance_after: result.balance, movement_date: toIsoDate(movementDate), note },
+            }, requestInfo(request));
+            return result;
+        });
 
         return NextResponse.json({
             success: true,

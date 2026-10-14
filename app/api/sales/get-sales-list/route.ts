@@ -3,15 +3,19 @@ import { db } from "@/app/db";
 import { sales } from "@/app/db/schema";
 import { desc } from "drizzle-orm";
 import { toReadErrorResponse } from "@/app/lib/api-error";
+import { authorize } from "@/app/lib/auth";
+import { postedSale } from "@/app/services/sales";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/sales/get-sales-list
- * Returns all sales transactions for display in the return-type sale selector.
+ * Returns all posted (not voided) sales transactions for display in the return-type sale selector.
  * Fields: sale_id, customer_name, sale_date, grand_total
  */
-export async function GET() {
+export async function GET(request: Request) {
+    const auth = await authorize(request, "sales.view");
+    if (!auth.ok) return auth.response;
     try {
         const allSales = await db
             .select({
@@ -21,6 +25,7 @@ export async function GET() {
                 grand_total: sales.grand_total,
             })
             .from(sales)
+            .where(postedSale)
             .orderBy(desc(sales.sale_id));
 
         return NextResponse.json(allSales);

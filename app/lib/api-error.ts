@@ -5,6 +5,39 @@ export interface ErrorResponse {
     status: number;
 }
 
+// A problem with the request whose message is written for the user, answered with `status` (400 unless given)
+export class RequestError extends Error {
+    constructor(message: string, public status = 400) {
+        super(message);
+        this.name = "RequestError";
+    }
+}
+
+// The JSON body of a request, or a RequestError saying it isn't valid JSON
+export async function readJson<T = Record<string, unknown>>(request: Request): Promise<T> {
+    try {
+        const body = await request.json();
+        if (body === null || typeof body !== "object" || Array.isArray(body)) throw new Error("not an object");
+        return body as T;
+    } catch {
+        throw new RequestError("The request body must be a JSON object.");
+    }
+}
+
+// Error response for routes that change data: { success: false, message, error }
+export function writeErrorJson(error: unknown, context: string): Response {
+    console.error(context, error);
+    const { message, status } = toErrorResponse(error);
+    return Response.json({ success: false, message, error: message }, { status });
+}
+
+// Error response for routes that only read data: { error }
+export function readErrorJson(error: unknown, context: string): Response {
+    console.error(context, error);
+    const { message, status } = toReadErrorResponse(error);
+    return Response.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
+}
+
 // Driver codes meaning the database server could not be reached or would not let us in
 const CONNECTION_ERROR_CODES = new Set([
     "ECONNREFUSED",
@@ -45,6 +78,7 @@ function databaseProblem(error: unknown): ErrorResponse | null {
 // Errors thrown by our own validation are safe to show to the user (400).
 // Query / driver failures carry raw SQL or connection details, so log them and return a fixed message.
 export function toErrorResponse(error: unknown): ErrorResponse {
+    if (error instanceof RequestError) return { message: error.message, status: error.status };
     const problem = databaseProblem(error);
     if (problem) return problem;
 
@@ -57,5 +91,6 @@ export function toErrorResponse(error: unknown): ErrorResponse {
 
 // For routes that only read data: any failure is a server fault rather than bad input, so its message is never shown
 export function toReadErrorResponse(error: unknown): ErrorResponse {
+    if (error instanceof RequestError) return { message: error.message, status: error.status };
     return databaseProblem(error) ?? { message: "Internal Server Error", status: 500 };
 }

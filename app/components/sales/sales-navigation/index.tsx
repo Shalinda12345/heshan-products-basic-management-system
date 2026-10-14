@@ -1,43 +1,17 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import SectionNav, { type SectionTab } from '@/app/components/ui/section-nav';
+
+const TABS: SectionTab[] = [
+    { href: '/pages/sales', label: 'New Sale', icon: '📝', permission: 'sales.create' },
+    { href: '/pages/sales/invoices', label: 'Invoices', icon: '🧾', permission: 'sales.view' },
+    { href: '/pages/sales/items-sold', label: 'Items Sold', icon: '📦', permission: 'sales.view' },
+    { href: '/pages/sales/daily-sales', label: 'Daily Reports', icon: '📊', permission: 'sales.view' },
+    { href: '/pages/sales/weekly-sales', label: 'Weekly Statements', icon: '📈', permission: 'sales.view' },
+    { href: '/pages/sales/monthly-sales', label: 'Monthly Audits', icon: '📅', permission: 'sales.view' },
+    { href: '/pages/sales/custom-sales', label: 'Custom', icon: '🔍', permission: 'sales.view' },
+];
 
 export default function SalesNavigation() {
-    const pathname = usePathname();
-
-    const tabs = [
-        { href: '/pages/sales', label: 'New Sale', icon: '📝' },
-        { href: '/pages/sales/items-sold', label: 'Items Sold', icon: '📦' },
-        { href: '/pages/sales/daily-sales', label: 'Daily Reports', icon: '📊' },
-        { href: '/pages/sales/weekly-sales', label: 'Weekly Statements', icon: '📈' },
-        { href: '/pages/sales/monthly-sales', label: 'Monthly Audits', icon: '📅' },
-        { href: '/pages/sales/custom-sales', label: 'Custom', icon: '🔍' },
-    ];
-
-    return (
-        <div className="sticky top-[84px] z-30 w-full bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 shadow-sm">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <nav className="flex items-center gap-1 py-2">
-                    {tabs.map((tab) => {
-                        const isActive = pathname === tab.href;
-                        return (
-                            <Link
-                                key={tab.href}
-                                href={tab.href}
-                                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold transition-all duration-200 transform active:scale-95 text-xs sm:text-sm whitespace-nowrap ${
-                                    isActive
-                                        ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
-                                }`}
-                            >
-                                <span>{tab.icon}</span>
-                                <span>{tab.label}</span>
-                            </Link>
-                        );
-                    })}
-                </nav>
-            </div>
-        </div>
-    );
+    return <SectionNav tabs={TABS} label="Sales sections" />;
 }

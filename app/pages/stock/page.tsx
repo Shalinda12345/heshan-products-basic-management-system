@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert';
+import { usePermissions } from '@/app/components/auth/user-provider';
 import { backgroundFetch, useLiveRefresh } from '@/app/lib/use-live-refresh';
 import { responseErrorMessage } from '@/app/lib/fetch-error';
 import { toIsoDate } from '@/app/lib/dates';
 import {
-  LOW_STOCK_THRESHOLD,
   MANUAL_MOVEMENT_TYPES,
   movementLabel,
   stockStatus,
@@ -21,6 +21,8 @@ interface StockItem {
   quantity: number;
   today_in: number;
   today_out: number;
+  reorder_level: number | null;
+  is_active: boolean;
 }
 
 interface StockMovement {
@@ -35,7 +37,11 @@ interface StockMovement {
   note: string | null;
   movement_date: string;
   created_at: string | null;
+  created_by_name: string | null;
 }
+
+// IN / OUT record a movement; COUNT sets the stock to what was physically counted
+type Mode = StockDirection | 'COUNT';
 
 const LIVE_REFRESH_MS = 5000;
 const LEDGER_LIMIT = 100;
@@ -49,6 +55,7 @@ const filterClass =
   'px-3 py-2 border border-slate-800 rounded-xl focus:outline-none focus:border-indigo-500 bg-slate-900 text-white text-xs font-semibold';
 
 export default function StockPage() {
+  const { can } = usePermissions();
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -59,7 +66,9 @@ export default function StockPage() {
   const latestMovementId = useRef<number | null>(null);
 
   // Movement form
-  const [direction, setDirection] = useState<StockDirection>('IN');
+  const [mode, setMode] = useState<Mode>('IN');
+  const direction: StockDirection = mode === 'OUT' ? 'OUT' : 'IN';
+  const [countedQuantity, setCountedQuantity] = useState<string>('');
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(0);
   const [movementType, setMovementType] = useState<MovementType>(MANUAL_MOVEMENT_TYPES.IN[0]);
@@ -155,14 +164,54 @@ export default function StockPage() {
   const projectedBalance = selectedProduct
     ? selectedProduct.quantity + (direction === 'IN' ? quantity : -quantity)
     : null;
+  const countDifference = selectedProduct && countedQuantity !== '' ? Number(countedQuantity) - selectedProduct.quantity : null;
+  // Inactive products can still be counted or have stock removed, but not received
+  const formProducts = stockItems.filter(p => p.is_active || (mode !== 'IN' && p.quantity !== 0));
 
-  const switchDirection = (next: StockDirection) => {
-    setDirection(next);
-    setMovementType(MANUAL_MOVEMENT_TYPES[next][0]);
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    if (next !== 'COUNT') setMovementType(MANUAL_MOVEMENT_TYPES[next][0]);
+  };
+
+  const submitCount = async () => {
+    if (!selectedProductId || countedQuantity === '' || Number(countedQuantity) < 0) {
+      showAlert('warning', 'Invalid Input', 'Please select a product and enter the counted quantity (0 or more).');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('/api/stock/adjust', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: Number(selectedProductId), counted_quantity: Number(countedQuantity), movement_date: movementDate, note }),
+      });
+      if (!response.ok) {
+        showAlert('error', 'Count Not Saved', await responseErrorMessage(response, 'The stock count could not be saved.'));
+        return;
+      }
+      const result = await response.json();
+      await loadData().catch(() => undefined);
+      const { difference } = result.data as { difference: number };
+      showAlert('success', 'Stock Count Saved', difference === 0
+        ? `"${selectedProduct?.product_name}" matches the system at ${fmtQty(Number(countedQuantity))}.`
+        : `"${selectedProduct?.product_name}" corrected by ${difference > 0 ? '+' : '−'}${fmtQty(Math.abs(difference))} to ${fmtQty(Number(countedQuantity))}.`);
+      setSelectedProductId('');
+      setCountedQuantity('');
+      setNote('');
+    } catch (error: unknown) {
+      console.error('Error saving stock count:', error);
+      showAlert('error', 'Network Error', 'A connection error occurred. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (mode === 'COUNT') {
+      await submitCount();
+      return;
+    }
     if (!selectedProductId || quantity <= 0) {
       showAlert('warning', 'Invalid Input', 'Please select a product and enter a positive quantity.');
       return;
@@ -212,23 +261,23 @@ export default function StockPage() {
   };
 
   // Filter stock items by search query
-  const filteredStock = stockItems.filter(item =>
+  const filteredStock = stockItems.filter(item => item.is_active || item.quantity !== 0).filter(item =>
     item.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const totals = {
     units: stockItems.reduce((sum, item) => sum + Math.max(item.quantity, 0), 0),
-    low: stockItems.filter(item => stockStatus(item.quantity) === 'low').length,
-    out: stockItems.filter(item => stockStatus(item.quantity) === 'out').length,
+    low: stockItems.filter(item => item.is_active && stockStatus(item.quantity, item.reorder_level) === 'low').length,
+    out: stockItems.filter(item => item.is_active && stockStatus(item.quantity, item.reorder_level) === 'out').length,
     todayIn: stockItems.reduce((sum, item) => sum + item.today_in, 0),
     todayOut: stockItems.reduce((sum, item) => sum + item.today_out, 0),
   };
 
   const ledgerFiltered = ledgerProductId || ledgerDirection || ledgerFrom || ledgerTo;
 
-  const getStockBadge = (qty: number) => {
-    const status = stockStatus(qty);
+  const getStockBadge = (qty: number, reorderLevel: number | null) => {
+    const status = stockStatus(qty, reorderLevel);
     if (status === 'out') {
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-950/30 text-red-400 border border-red-900/30">
@@ -256,7 +305,7 @@ export default function StockPage() {
   const kpis = [
     { label: 'Products', value: String(stockItems.length), hint: 'Tracked items', tone: 'text-slate-100' },
     { label: 'Units on Hand', value: fmtQty(totals.units), hint: 'Across all products', tone: 'text-sky-300' },
-    { label: 'Low Stock', value: String(totals.low), hint: `Below ${LOW_STOCK_THRESHOLD} units`, tone: totals.low > 0 ? 'text-amber-400' : 'text-slate-100' },
+    { label: 'Low Stock', value: String(totals.low), hint: 'At or below reorder level', tone: totals.low > 0 ? 'text-amber-400' : 'text-slate-100' },
     { label: 'Out of Stock', value: String(totals.out), hint: 'Nothing left to sell', tone: totals.out > 0 ? 'text-red-400' : 'text-slate-100' },
     { label: 'Today In', value: `+${fmtQty(totals.todayIn)}`, hint: 'Units received today', tone: 'text-emerald-400' },
     { label: 'Today Out', value: `−${fmtQty(totals.todayOut)}`, hint: 'Units sold or removed', tone: 'text-rose-400' },
@@ -316,26 +365,37 @@ export default function StockPage() {
 
           {/* LEFT COLUMN: Movement form */}
           <div className="lg:col-span-5 glass-card rounded-2xl p-6 sm:p-8">
-            <h2 className="text-xl font-bold text-white mb-5">Record Stock Movement</h2>
+            <h2 className="text-xl font-bold text-white mb-5">{mode === 'COUNT' ? 'Record Stock Count' : 'Record Stock Movement'}</h2>
 
-            {/* In / Out toggle */}
-            <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-950/60 border border-slate-800 mb-6" role="group" aria-label="Movement direction">
+            {/* In / Out (/ Count) toggle */}
+            <div className={`grid ${can('stock.adjust') ? 'grid-cols-3' : 'grid-cols-2'} gap-2 p-1 rounded-xl bg-slate-950/60 border border-slate-800 mb-6`} role="group" aria-label="Movement direction">
               <button
                 type="button"
-                onClick={() => switchDirection('IN')}
-                aria-pressed={direction === 'IN'}
-                className={`py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer ${direction === 'IN' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20' : 'text-slate-400 hover:text-slate-200'}`}
+                onClick={() => switchMode('IN')}
+                aria-pressed={mode === 'IN'}
+                className={`py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer ${mode === 'IN' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 ▲ Stock In
               </button>
               <button
                 type="button"
-                onClick={() => switchDirection('OUT')}
-                aria-pressed={direction === 'OUT'}
-                className={`py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer ${direction === 'OUT' ? 'bg-rose-600 text-white shadow-md shadow-rose-500/20' : 'text-slate-400 hover:text-slate-200'}`}
+                onClick={() => switchMode('OUT')}
+                aria-pressed={mode === 'OUT'}
+                className={`py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer ${mode === 'OUT' ? 'bg-rose-600 text-white shadow-md shadow-rose-500/20' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 ▼ Stock Out
               </button>
+              {can('stock.adjust') && (
+                <button
+                  type="button"
+                  onClick={() => switchMode('COUNT')}
+                  aria-pressed={mode === 'COUNT'}
+                  title="Set the stock to what you physically counted"
+                  className={`py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer ${mode === 'COUNT' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-200'}`}
+                >
+                  ☰ Count
+                </button>
+              )}
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5" aria-label="Stock movement form">
@@ -351,9 +411,9 @@ export default function StockPage() {
                     required
                   >
                     <option value="">Choose product</option>
-                    {stockItems.map((product) => (
+                    {formProducts.map((product) => (
                       <option key={product.product_id} value={product.product_id}>
-                        {product.product_name} — {fmtQty(product.quantity)} in stock
+                        {product.product_name} — {fmtQty(product.quantity)} in stock{product.is_active ? '' : ' (inactive)'}
                       </option>
                     ))}
                   </select>
@@ -361,20 +421,37 @@ export default function StockPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Quantity</label>
-                  <input
-                    type="number"
-                    value={quantity > 0 ? quantity : ''}
-                    onChange={(e) => setQuantity(Number(e.target.value))}
-                    className={inputClass}
-                    placeholder="0"
-                    min="0.01"
-                    step="any"
-                    max={direction === 'OUT' && selectedProduct ? selectedProduct.quantity : undefined}
-                    required
-                  />
-                </div>
+                {mode === 'COUNT' ? (
+                  <div>
+                    <label className={labelClass} htmlFor="counted-quantity">Counted quantity</label>
+                    <input
+                      id="counted-quantity"
+                      type="number"
+                      value={countedQuantity}
+                      onChange={(e) => setCountedQuantity(e.target.value)}
+                      className={inputClass}
+                      placeholder="0"
+                      min="0"
+                      step="any"
+                      required
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className={labelClass}>Quantity</label>
+                    <input
+                      type="number"
+                      value={quantity > 0 ? quantity : ''}
+                      onChange={(e) => setQuantity(Number(e.target.value))}
+                      className={inputClass}
+                      placeholder="0"
+                      min="0.01"
+                      step="any"
+                      max={direction === 'OUT' && selectedProduct ? selectedProduct.quantity : undefined}
+                      required
+                    />
+                  </div>
+                )}
                 <div>
                   <label className={labelClass}>Date</label>
                   <input
@@ -388,18 +465,20 @@ export default function StockPage() {
                 </div>
               </div>
 
-              <div>
-                <label className={labelClass}>Reason</label>
-                <select
-                  value={movementType}
-                  onChange={(e) => setMovementType(e.target.value as MovementType)}
-                  className={inputClass}
-                >
-                  {MANUAL_MOVEMENT_TYPES[direction].map(type => (
-                    <option key={type} value={type}>{movementLabel(type)}</option>
-                  ))}
-                </select>
-              </div>
+              {mode !== 'COUNT' && (
+                <div>
+                  <label className={labelClass}>Reason</label>
+                  <select
+                    value={movementType}
+                    onChange={(e) => setMovementType(e.target.value as MovementType)}
+                    className={inputClass}
+                  >
+                    {MANUAL_MOVEMENT_TYPES[direction].map(type => (
+                      <option key={type} value={type}>{movementLabel(type)}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className={labelClass}>Note (optional)</label>
@@ -409,11 +488,25 @@ export default function StockPage() {
                   maxLength={255}
                   onChange={(e) => setNote(e.target.value)}
                   className={inputClass}
-                  placeholder={direction === 'IN' ? 'e.g. Morning batch, supplier invoice no.' : 'e.g. Spoiled in transport'}
+                  placeholder={mode === 'COUNT' ? 'e.g. Month-end count' : direction === 'IN' ? 'e.g. Morning batch, supplier invoice no.' : 'e.g. Spoiled in transport'}
                 />
               </div>
 
-              {selectedProduct && (
+              {selectedProduct && mode === 'COUNT' && (
+                <div className="p-3.5 rounded-xl border flex items-center justify-between text-sm bg-indigo-950/20 border-indigo-900/30">
+                  <span className="text-slate-400">
+                    System <span className="font-bold text-white">{fmtQty(selectedProduct.quantity)}</span>
+                    {countDifference !== null && <> → counted <span className="font-bold text-white">{fmtQty(Number(countedQuantity))}</span></>}
+                  </span>
+                  {countDifference !== null && (
+                    <span className={`text-xs font-bold ${countDifference === 0 ? 'text-slate-400' : countDifference > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {countDifference === 0 ? 'No difference' : `${countDifference > 0 ? '+' : '−'}${fmtQty(Math.abs(countDifference))}`}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {selectedProduct && mode !== 'COUNT' && (
                 <div className={`p-3.5 rounded-xl border flex items-center justify-between text-sm ${direction === 'IN' ? 'bg-emerald-950/20 border-emerald-900/30' : 'bg-rose-950/20 border-rose-900/30'}`}>
                   <span className="text-slate-400">
                     Current <span className="font-bold text-white">{fmtQty(selectedProduct.quantity)}</span>
@@ -434,9 +527,9 @@ export default function StockPage() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className={`w-full px-6 py-4 bg-gradient-to-r ${direction === 'IN' ? 'from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700' : 'from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700'} disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-base rounded-xl shadow-lg transform active:scale-[0.99] transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer`}
+                    className={`w-full px-6 py-4 bg-gradient-to-r ${mode === 'COUNT' ? 'from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700' : direction === 'IN' ? 'from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700' : 'from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700'} disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-base rounded-xl shadow-lg transform active:scale-[0.99] transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer`}
                   >
-                    {isSubmitting ? 'Submitting...' : direction === 'IN' ? 'Add Stock' : 'Remove Stock'}
+                    {isSubmitting ? 'Submitting...' : mode === 'COUNT' ? 'Save Count' : direction === 'IN' ? 'Add Stock' : 'Remove Stock'}
                   </button>
                 )}
               </div>
@@ -504,7 +597,7 @@ export default function StockPage() {
                           {item.today_out > 0 ? <span className="text-rose-400 font-bold">−{fmtQty(item.today_out)}</span> : <span className="text-slate-600">—</span>}
                         </td>
                         <td className="py-3.5 px-5 text-right font-medium">
-                          {getStockBadge(item.quantity)}
+                          {getStockBadge(item.quantity, item.reorder_level)}
                         </td>
                       </tr>
                     ))
@@ -560,14 +653,15 @@ export default function StockPage() {
                   <th className="py-3.5 px-4 text-right">In</th>
                   <th className="py-3.5 px-4 text-right">Out</th>
                   <th className="py-3.5 px-4 text-right">Balance</th>
+                  <th className="py-3.5 px-4">By</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {loading ? (
-                  <tr><td colSpan={7} className="py-10 text-center text-slate-500 text-sm animate-pulse">Loading movements...</td></tr>
+                  <tr><td colSpan={8} className="py-10 text-center text-slate-500 text-sm animate-pulse">Loading movements...</td></tr>
                 ) : movements.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center">
+                    <td colSpan={8} className="py-12 text-center">
                       <p className="text-slate-200 font-bold text-sm">No stock movements</p>
                       <p className="text-slate-400 text-xs mt-1">
                         {ledgerFiltered ? 'Nothing matches these filters.' : 'Movements appear here as stock is received, sold or removed.'}
@@ -600,6 +694,7 @@ export default function StockPage() {
                         <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">{isIn ? `+${fmtQty(m.quantity)}` : ''}</td>
                         <td className="py-3 px-4 text-right font-mono font-bold text-rose-400">{isIn ? '' : `−${fmtQty(m.quantity)}`}</td>
                         <td className="py-3 px-4 text-right font-mono text-slate-200">{fmtQty(m.balance_after)}</td>
+                        <td className="py-3 px-4 text-xs text-slate-400 whitespace-nowrap">{m.created_by_name ?? '—'}</td>
                       </tr>
                     );
                   })
