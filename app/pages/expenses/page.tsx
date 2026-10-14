@@ -815,12 +815,16 @@ export default function ExpensesPage() {
                                                                         const sItem = selectedSaleItems.find(i => i.product_name === itemName);
                                                                         setSaleReturnPrice(sItem ? Number(sItem.selling_price) : 0);
                                                                         setSaleReturnQuantity(0);
+                                                                        // Returned goods normally go back to the same product's stock
+                                                                        const sameProduct = allStockItems.find(p => p.product_name === itemName);
+                                                                        setCreditStockProductId(sameProduct ? String(sameProduct.product_id) : "");
                                                                     }}
                                                                     className="w-full px-4 py-3 border border-teal-800/60 rounded-xl focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                                                                     required
                                                                 >
                                                                     <option value="">Choose item</option>
-                                                                    {selectedSaleItems.map((item) => (
+                                                                    {/* Lines already returned in full have nothing left to return */}
+                                                                    {selectedSaleItems.filter((item) => Number(item.quantity) > 0).map((item) => (
                                                                         <option key={item.sale_detail_id} value={item.product_name}>
                                                                             {item.product_name} (Qty: {item.quantity}, @ Rs.{Number(item.selling_price).toFixed(2)})
                                                                         </option>

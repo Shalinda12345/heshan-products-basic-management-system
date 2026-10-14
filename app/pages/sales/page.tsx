@@ -4,6 +4,7 @@ import AddSalesPopup from '@/app/components/sales/add-sales-popup';
 import SalesNavigation from '@/app/components/sales/sales-navigation';
 import SalesInvoicePage from '@/app/components/sales/sales-invoice';
 import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert';
+import { backgroundFetch, useLiveRefresh } from '@/app/lib/use-live-refresh';
 
 type SaleItem = {
   product_name: string;
@@ -47,9 +48,7 @@ export default function SalesPage() {
 
   const fetchStock = async () => {
     try {
-      const response = await fetch("/api/stock", {
-        cache: "no-store",
-      });
+      const response = await backgroundFetch("/api/stock");
 
       if (!response.ok) {
         throw new Error("Failed to fetch stock");
@@ -72,6 +71,9 @@ export default function SalesPage() {
     loadData();
   }, []);
 
+  // Keep available quantities current while other people sell or receive stock
+  useLiveRefresh(fetchStock, 10000, !loading);
+
   const stock = stockItems.find(
     (item) => item.product_name === productName
   );
@@ -81,6 +83,8 @@ export default function SalesPage() {
 
   const handleClick = () => {
     setIsPopupOpen(true);
+    // Check against the latest levels, not the ones loaded when the page opened
+    fetchStock();
   };
 
   const handleClosePopup = () => {
@@ -119,7 +123,7 @@ export default function SalesPage() {
       product_name: productName,
       quantity: quantityPerProduct,
       selling_price: sellingPricePerProduct,
-      total: quantityPerProduct * sellingPricePerProduct,
+      total: Math.round(quantityPerProduct * sellingPricePerProduct * 100) / 100,
     };
 
     setSaleItems((currentItems) => [...currentItems, newItem]);
@@ -258,13 +262,19 @@ export default function SalesPage() {
                   >
                     <option value="">Select a product</option>
                     {stockItems.map((product) => (
-                      <option key={product.product_id} value={product.product_name}>
-                        {product.product_name}
+                      <option key={product.product_id} value={product.product_name} disabled={product.quantity <= 0}>
+                        {product.product_name} ({product.quantity > 0 ? `${product.quantity} in stock` : 'out of stock'})
                       </option>
                     ))}
                   </select>
                 )}
               </div>
+
+              {stock && (
+                <p className={`-mt-3 text-xs font-medium ${availableStock > 0 ? 'text-slate-400' : 'text-rose-400'}`}>
+                  Available now: <span className="font-bold text-white">{availableStock}</span> units
+                </p>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

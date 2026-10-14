@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import MonthSelector, { MONTH_NAMES } from '@/app/components/ui/month-selector';
+import { backgroundFetch, useLiveRefresh } from '@/app/lib/use-live-refresh';
+import { stockStatus } from '@/app/lib/stock';
 import {
     AreaChart, Area, BarChart, Bar, LineChart, Line,
     PieChart, Pie, Cell,
@@ -31,6 +34,14 @@ interface ExpenseCategory {
 interface TopCustomer {
     name: string;
     total: number;
+}
+
+interface StockItem {
+    product_id: number;
+    product_name: string;
+    quantity: number;
+    today_in: number;
+    today_out: number;
 }
 
 interface DashboardData {
@@ -224,6 +235,11 @@ export default function Home() {
     const [lastUpdated, setLastUpdated] = useState('');
     // A counter bumped by the Refresh button — causes the effect to re-run
     const [refreshTick, setRefreshTick] = useState(0);
+    const [stock, setStock] = useState<StockItem[] | null>(null);
+
+    const yearsParam = period === 'multi' ? years : 1;
+    const monthParam = period === 'month' ? `&year=${selectedYear}&month=${selectedMonth}` : '';
+    const summaryUrl = `/api/dashboard/summary?period=${period}&years=${yearsParam}${monthParam}`;
 
     useEffect(() => {
         const controller = new AbortController();
@@ -232,11 +248,8 @@ export default function Home() {
         const run = async () => {
             setLoading(true);
             try {
-                const p  = period === 'multi' ? 'multi' : period;
-                const yr = period === 'multi' ? years : 1;
-                const monthParam = period === 'month' ? `&year=${selectedYear}&month=${selectedMonth}` : '';
                 const res = await fetch(
-                    `/api/dashboard/summary?period=${p}&years=${yr}${monthParam}&_t=${Date.now()}`,
+                    `${summaryUrl}&_t=${Date.now()}`,
                     { signal: controller.signal, cache: 'no-store' }
                 );
                 if (!res.ok) throw new Error(`API returned ${res.status}`);
@@ -262,7 +275,40 @@ export default function Home() {
             cancelled = true;
             controller.abort();
         };
-    }, [period, years, selectedYear, selectedMonth, refreshTick]);
+    }, [summaryUrl, refreshTick]);
+
+    // Background refresh: update the figures in place, without the loading skeletons
+    const refreshSummarySilently = useCallback(async () => {
+        const res = await backgroundFetch(summaryUrl);
+        if (!res.ok) return;
+        setData(await res.json());
+        setLastUpdated(new Date().toLocaleTimeString());
+    }, [summaryUrl]);
+    useLiveRefresh(refreshSummarySilently, 60000, !loading);
+
+    const refreshStock = useCallback(async () => {
+        const res = await backgroundFetch('/api/stock');
+        if (res.ok) setStock(await res.json());
+    }, []);
+    useEffect(() => {
+        let cancelled = false;
+        backgroundFetch('/api/stock')
+            .then(res => (res.ok ? res.json() : null))
+            .then(items => {
+                if (!cancelled && items) setStock(items);
+            })
+            .catch(() => undefined);
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+    useLiveRefresh(refreshStock, 15000);
+
+    const stockAlerts = (stock ?? [])
+        .filter(item => stockStatus(item.quantity) !== 'ok')
+        .sort((a, b) => a.quantity - b.quantity);
+    const stockTodayIn = (stock ?? []).reduce((sum, item) => sum + item.today_in, 0);
+    const stockTodayOut = (stock ?? []).reduce((sum, item) => sum + item.today_out, 0);
 
     // Current date header
     const today = new Date();
@@ -386,6 +432,51 @@ export default function Home() {
                     <KpiCard title="Profit Margin"  value={kpis?.profitMargin   ?? 0} icon="🎯" color="#a855f7" suffix="%"   trend="Net profit as % of revenue"      isLoading={loading} />
                 </div>
 
+                {/* ═══ Stock Watch (live) ══════════════════════════════════════ */}
+                <div style={{ marginBottom: 28 }}>
+                    <ChartCard title="Stock Watch" subtitle="Live stock movement today and products that need restocking">
+                        <div className="dash-grid-stock">
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignContent: 'start' }}>
+                                {[
+                                    { label: 'Units In Today', value: `+${stockTodayIn.toLocaleString()}`, color: '#10b981' },
+                                    { label: 'Units Out Today', value: `−${stockTodayOut.toLocaleString()}`, color: '#f43f5e' },
+                                    { label: 'Low Stock', value: String(stockAlerts.filter(i => stockStatus(i.quantity) === 'low').length), color: '#f59e0b' },
+                                    { label: 'Out of Stock', value: String(stockAlerts.filter(i => stockStatus(i.quantity) === 'out').length), color: '#ef4444' },
+                                ].map(tile => (
+                                    <div key={tile.label} style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${tile.color}22`, borderRadius: 14, padding: '14px 16px' }}>
+                                        <p style={{ color: '#64748b', fontSize: 11, fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{tile.label}</p>
+                                        <p style={{ color: tile.color, fontSize: 22, fontWeight: 800, margin: '4px 0 0', fontFamily: 'monospace' }}>{stock ? tile.value : '—'}</p>
+                                    </div>
+                                ))}
+                            </div>
+                            <div>
+                                {stock === null ? (
+                                    <LoadingSkeleton height={120} />
+                                ) : stockAlerts.length === 0 ? (
+                                    <EmptyState message="All products are well stocked" icon="✅" />
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
+                                        {stockAlerts.map(item => {
+                                            const out = stockStatus(item.quantity) === 'out';
+                                            return (
+                                                <div key={item.product_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 14px', borderRadius: 12, background: out ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)', border: `1px solid ${out ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}` }}>
+                                                    <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 14 }}>{item.product_name}</span>
+                                                    <span style={{ color: out ? '#f87171' : '#fbbf24', fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap' }}>
+                                                        {out ? 'Out of stock' : `${item.quantity} left`}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                                <Link href="/pages/stock" style={{ display: 'inline-block', marginTop: 12, color: '#a5b4fc', fontSize: 13, fontWeight: 600 }}>
+                                    Open stock control →
+                                </Link>
+                            </div>
+                        </div>
+                    </ChartCard>
+                </div>
+
                 {/* ═══ Net Profit Chart (full width) ══════════════════════════ */}
                 <div style={{ marginBottom: 28 }}>
                     <ChartCard title="Net Profit Overview" subtitle={`Profit/loss trend — ${period === 'month' ? `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}` : PERIODS.find(p => p.key === period)?.label}${period === 'multi' ? ` (${years} years)` : ''}`}>
@@ -414,7 +505,7 @@ export default function Home() {
                 </div>
 
                 {/* ═══ Sales vs Expenses + Sales Trend ═══════════════════════ */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 28 }}>
+                <div className="dash-grid-2">
                     {/* Sales vs Expenses Bar */}
                     <ChartCard title="Sales vs Expenses" subtitle="Side-by-side comparison">
                         {loading ? <LoadingSkeleton height={260} /> : (
@@ -455,7 +546,7 @@ export default function Home() {
                 </div>
 
                 {/* ═══ Expense Trend + Expense Breakdown ═════════════════════ */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 28 }}>
+                <div className="dash-grid-2">
                     {/* Expense Trend */}
                     <ChartCard title="Expense Trend" subtitle="Cost trajectory over time">
                         {loading ? <LoadingSkeleton height={260} /> : (
@@ -628,6 +719,11 @@ export default function Home() {
                 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
                 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
                 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+                .dash-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 28px; }
+                .dash-grid-stock { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 24px; }
+                @media (max-width: 900px) {
+                    .dash-grid-2, .dash-grid-stock { grid-template-columns: minmax(0, 1fr); }
+                }
             `}</style>
         </main>
     );
@@ -655,10 +751,10 @@ function LoadingSkeleton({ height }: { height: number }) {
     );
 }
 
-function EmptyState({ message }: { message: string }) {
+function EmptyState({ message, icon = '📭' }: { message: string; icon?: string }) {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 180, gap: 12 }}>
-            <span style={{ fontSize: 40 }}>📭</span>
+            <span style={{ fontSize: 40 }}>{icon}</span>
             <p style={{ color: '#475569', fontSize: 14, fontWeight: 500 }}>{message}</p>
         </div>
     );

@@ -232,7 +232,7 @@ export async function GET(request: Request) {
     } catch (error) {
         console.error("Failed to fetch items sold summary:", error);
         return NextResponse.json(
-            { error: "Internal Server Error", message: (error as Error).message },
+            { error: "Internal Server Error" },
             { status: 500 }
         );
     }

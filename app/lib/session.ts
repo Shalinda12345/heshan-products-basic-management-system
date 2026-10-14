@@ -2,7 +2,21 @@
 // Uses Web Crypto so the same code runs in the proxy, route handlers and server actions.
 
 export const SESSION_COOKIE = "auth_token";
-export const SESSION_MAX_AGE_SECONDS = 60 * 60; // 1 hour
+export const SESSION_MAX_AGE_SECONDS = 60 * 60; // 1 hour of inactivity
+
+// Sent by automatic background refreshes (live stock, dashboard). The proxy does not treat them as
+// user activity, so a screen left open doesn't keep its session alive forever.
+export const BACKGROUND_REQUEST_HEADER = "x-background-refresh";
+
+export function sessionCookieOptions() {
+    return {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax" as const,
+        path: "/",
+        maxAge: SESSION_MAX_AGE_SECONDS,
+    };
+}
 
 const encoder = new TextEncoder();
 let keyPromise: Promise<CryptoKey> | undefined;
@@ -58,4 +72,11 @@ export async function verifySessionToken(token: string | undefined): Promise<boo
     if (!signatureBytes) return false;
 
     return crypto.subtle.verify("HMAC", await getKey(), signatureBytes, encoder.encode(`${version}.${expiresAt}`));
+}
+
+// True once less than half of a (valid) session's lifetime is left, so active users get a fresh
+// token instead of being signed out mid-task when the original hour runs out.
+export function shouldRenewSession(token: string | undefined, now = Date.now()): boolean {
+    const expiresAt = Number(token?.split(".")[1]);
+    return Number.isFinite(expiresAt) && expiresAt - now < (SESSION_MAX_AGE_SECONDS * 1000) / 2;
 }

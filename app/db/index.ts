@@ -14,7 +14,22 @@ if (!connectionString) {
   );
 }
 
-const connection = globalForDb.conn ?? mysql.createPool(connectionString as string);
+function createPool(): mysql.Pool {
+  const pool = mysql.createPool(connectionString as string);
+  // Drizzle reads and writes TIMESTAMP columns as UTC, so each session must use UTC as well. Otherwise
+  // values filled in by the database (DEFAULT CURRENT_TIMESTAMP) come back shifted by the server's offset.
+  // TIMESTAMP is stored as UTC internally, so rows written before this setting read back correctly too.
+  pool.on('connection', (conn) => {
+    // mysql2 passes its callback-style connection here, despite the promise typings
+    (conn as unknown as { query: (sql: string, callback: (error: unknown) => void) => void })
+      .query("SET time_zone = '+00:00'", (error) => {
+        if (error) console.error('Failed to set the database session time zone:', error);
+      });
+  });
+  return pool;
+}
+
+const connection = globalForDb.conn ?? createPool();
 
 if (process.env.NODE_ENV !== 'production') globalForDb.conn = connection;
 

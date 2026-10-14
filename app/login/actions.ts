@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, createSessionToken } from "@/app/lib/session";
+import { SESSION_COOKIE, createSessionToken, sessionCookieOptions } from "@/app/lib/session";
 
 export async function handleLogin(prevState: unknown, formData: FormData) {
     const username = formData.get("username") as string;
@@ -27,13 +27,7 @@ export async function handleLogin(prevState: unknown, formData: FormData) {
     // Create a signed, expiring session cookie
     const cookieStore = await cookies();
 
-    cookieStore.set(SESSION_COOKIE, await createSessionToken(), {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: SESSION_MAX_AGE_SECONDS,
-    });
+    cookieStore.set(SESSION_COOKIE, await createSessionToken(), sessionCookieOptions());
 
     redirect("/");
 }

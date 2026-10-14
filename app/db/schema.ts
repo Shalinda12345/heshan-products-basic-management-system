@@ -1,4 +1,4 @@
-import { mysqlTable, serial, varchar, timestamp, double, int, date } from 'drizzle-orm/mysql-core';
+import { mysqlTable, serial, varchar, timestamp, double, int, date, index } from 'drizzle-orm/mysql-core';
 
 export const users = mysqlTable('users', {
     id: serial('id').primaryKey(),
@@ -69,6 +69,30 @@ export const employees = mysqlTable('employees', {
     employee_contact_no: varchar('employee_contact_no', { length: 255 }).notNull(),
     maritial_status: varchar('maritial_status', { length: 255 }).notNull(),
 })
+
+// Stock ledger: one row per change to a product's stock level, so every unit in and out is traceable.
+// `quantity` is always positive; `direction` says which way it moved.
+export const stock_movements = mysqlTable('stock_movements', {
+    movement_id:   serial('movement_id').primaryKey(),
+    product_id:    int('product_id').notNull(),
+    product_name:  varchar('product_name', { length: 255 }).notNull(),
+    // IN | OUT
+    direction:     varchar('direction', { length: 3 }).notNull(),
+    // One of the keys of MOVEMENT_TYPES in app/lib/stock.ts
+    movement_type: varchar('movement_type', { length: 50 }).notNull(),
+    quantity:      double('quantity', { precision: 10, scale: 2 }).notNull(),
+    // Stock level of the product right after this movement
+    balance_after: double('balance_after', { precision: 10, scale: 2 }).notNull(),
+    // Source document, e.g. "Sale #12"
+    reference:     varchar('reference', { length: 100 }),
+    note:          varchar('note', { length: 255 }),
+    // Business date the movement belongs to (e.g. the invoice date)
+    movement_date: date('movement_date').notNull(),
+    created_at:    timestamp('created_at').defaultNow(),
+}, (table) => [
+    index('stock_movements_product_idx').on(table.product_id),
+    index('stock_movements_date_idx').on(table.movement_date),
+])
 
 // Tracks all return transactions regardless of type
 export const returns = mysqlTable('returns', {
