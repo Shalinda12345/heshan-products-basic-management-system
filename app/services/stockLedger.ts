@@ -1,10 +1,10 @@
-import { db } from "../db";
+import type { DbTransaction } from "../db";
 import { stocks, stock_movements } from "../db/schema";
 import { eq, sql } from "drizzle-orm";
 import { MOVEMENT_TYPES, type MovementType } from "../lib/stock";
 import { roundMoney } from "../lib/money";
 
-export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type { DbTransaction };
 
 interface StockMovementInput {
     productId: number;
@@ -14,6 +14,8 @@ interface StockMovementInput {
     movementDate: Date;
     reference?: string | null;
     note?: string | null;
+    // User who made the change
+    createdBy?: number | null;
     // Stock-in normally creates the product's stock row on first use; set this to refuse instead
     requireStockRow?: boolean;
     // Lets callers keep their own wording for validation errors
@@ -77,6 +79,7 @@ export async function applyStockMovement(tx: DbTransaction, input: StockMovement
         reference: input.reference?.trim() || null,
         note: input.note?.trim() || null,
         movement_date: input.movementDate,
+        created_by: input.createdBy ?? null,
     });
 
     return { stockId: Number(current.stock_id), balance, movementId: Number(movement.insertId) };

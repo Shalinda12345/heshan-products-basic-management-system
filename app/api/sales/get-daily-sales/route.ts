@@ -3,11 +3,15 @@ import { db } from "@/app/db";
 import { sales } from "@/app/db/schema";
 import { and, gte, lte, desc } from "drizzle-orm";
 import { toReadErrorResponse } from "@/app/lib/api-error";
+import { authorize } from "@/app/lib/auth";
+import { postedSale } from "@/app/services/sales";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request){
-    try{
+export async function GET(request: Request) {
+    const auth = await authorize(request, "sales.view");
+    if (!auth.ok) return auth.response;
+    try {
         const { searchParams } = new URL(request.url);
         const reqYear = searchParams.get("year") ? parseInt(searchParams.get("year")!, 10) : null;
         const reqMonth = searchParams.get("month") ? parseInt(searchParams.get("month")!, 10) - 1 : null;
@@ -31,7 +35,8 @@ export async function GET(request: Request){
             .where(
                 and(
                     gte(sales.sale_date, start),
-                    lte(sales.sale_date, end)
+                    lte(sales.sale_date, end),
+                    postedSale
                 )
             )
             .orderBy(desc(sales.sale_date));

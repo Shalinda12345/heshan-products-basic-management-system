@@ -8,6 +8,7 @@ import { responseErrorMessage } from '@/app/lib/fetch-error';
 import { backgroundFetch, useLiveRefresh } from '@/app/lib/use-live-refresh';
 
 type SaleItem = {
+  product_id: number;
   product_name: string;
   quantity: number;
   selling_price: number;
@@ -19,6 +20,8 @@ interface StockItem {
   product_name: string;
   description: string;
   quantity: number;
+  unit_price: number | null;
+  is_active: boolean;
 }
 
 export default function SalesPage() {
@@ -56,8 +59,9 @@ export default function SalesPage() {
         return await responseErrorMessage(response, "The product list could not be loaded. Refresh the page to try again.");
       }
 
-      const data = await response.json();
-      setStockItems(data);
+      const data: StockItem[] = await response.json();
+      // Inactive products are no longer sold
+      setStockItems(data.filter((item) => item.is_active !== false));
       return null;
     } catch (error) {
       console.error("Error fetching stock:", error);
@@ -128,6 +132,7 @@ export default function SalesPage() {
     }
 
     const newItem: SaleItem = {
+      product_id: stock?.product_id ?? 0,
       product_name: productName,
       quantity: quantityPerProduct,
       selling_price: sellingPricePerProduct,
@@ -163,6 +168,7 @@ export default function SalesPage() {
 
       // 2. Format payloads to match what your InsertSales service properties expect
       const formattedItems = saleItems.map(item => ({
+        product_id: item.product_id || undefined,
         product_name: item.product_name,
         quantity: item.quantity,
         selling_price: item.selling_price,
@@ -185,7 +191,7 @@ export default function SalesPage() {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        showAlert('success', 'Success', 'Invoice successfully saved to the database!');
+        showAlert('success', 'Invoice Posted', `Invoice #${result.sale_id} for ${customerName} has been saved and the stock updated.`);
 
         // Clear local states on success
         setSaleItems([]);
@@ -264,7 +270,12 @@ export default function SalesPage() {
                 ) : (
                   <select
                     value={productName}
-                    onChange={(e) => setProductName(e.target.value)}
+                    onChange={(e) => {
+                      setProductName(e.target.value);
+                      // Start from the product's usual selling price (it can still be changed)
+                      const price = stockItems.find((item) => item.product_name === e.target.value)?.unit_price;
+                      setSellingPricePerProduct(price && price > 0 ? price : 0);
+                    }}
                     className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white transition-all text-sm font-medium"
                     required
                   >

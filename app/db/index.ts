@@ -37,3 +37,7 @@ export const db = drizzle(connection, {
   schema,
   mode: 'default',
 });
+
+export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+// Either the database itself or an open transaction: code that writes "as part of" a larger change accepts both
+export type DbExecutor = typeof db | DbTransaction;

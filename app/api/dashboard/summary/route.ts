@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/app/db";
-import { sales, expenses } from "@/app/db/schema";
-import { and, gte, lte } from "drizzle-orm";
+import { customers, sales, expenses } from "@/app/db/schema";
+import { and, gte, lte, sql } from "drizzle-orm";
 import { toReadErrorResponse } from "@/app/lib/api-error";
+import { authorize } from "@/app/lib/auth";
+import { parseLocalDate, toIsoDate } from "@/app/lib/dates";
+import { samePeriodBefore, type DateRange } from "@/app/lib/periods";
+import { postedSale } from "@/app/services/sales";
+import { postedExpense } from "@/app/services/expenses";
+import { expenseCategoryOf } from "@/app/services/reports";
 
 export const dynamic = "force-dynamic";
 
@@ -160,7 +166,54 @@ function getLabelFn(period: string): (d: Date) => string {
     return (d) => formatMonthYear(d);
 }
 
+// The stretch of time the selected period is compared with: the same days of the previous day/week/month/year
+// while the period is still running, else the whole previous one. The multi-year view has no comparison.
+function comparisonRange(period: string, start: Date, end: Date): { range: DateRange; label: string } | null {
+    if (period === "multi") return null;
+    const now = new Date();
+    const inProgress = start <= now && now <= end;
+    const unit = period === "day" ? "day" : period === "week" ? "week" : period === "year" ? "year" : "month";
+    // Weeks and days are already "so far" ranges (the week runs Monday to today)
+    const span: DateRange = { from: toIsoDate(start), to: toIsoDate(inProgress && (unit === "month" || unit === "year") ? now : end) };
+    const range = samePeriodBefore(span, unit);
+    const names = { day: "yesterday", week: "the same days last week", month: "last month", year: "last year" } as const;
+    const label = inProgress && unit !== "day"
+        ? (unit === "week" ? `vs ${names.week}` : `vs the same days ${names[unit]}`)
+        : `vs ${unit === "day" ? names.day : `the previous ${unit}`}`;
+    if (!inProgress && unit !== "day" && unit !== "week") {
+        // A finished month or year is compared with the whole one before it
+        const from = parseLocalDate(span.from);
+        const prev = unit === "month"
+            ? { from: new Date(from.getFullYear(), from.getMonth() - 1, 1), to: new Date(from.getFullYear(), from.getMonth(), 0) }
+            : { from: new Date(from.getFullYear() - 1, 0, 1), to: new Date(from.getFullYear() - 1, 11, 31) };
+        return { range: { from: toIsoDate(prev.from), to: toIsoDate(prev.to) }, label };
+    }
+    return { range, label };
+}
+
+async function totalsBetween(range: DateRange) {
+    const from = parseLocalDate(range.from);
+    const to = parseLocalDate(range.to);
+    const [[salesTotal], [expenseTotal]] = await Promise.all([
+        db.select({ total: sql<number>`COALESCE(SUM(${sales.grand_total}), 0)` })
+            .from(sales).where(and(gte(sales.sale_date, from), lte(sales.sale_date, to), postedSale)),
+        db.select({ total: sql<number>`COALESCE(SUM(${expenses.total}), 0)` })
+            .from(expenses).where(and(gte(expenses.expense_date, from), lte(expenses.expense_date, to), postedExpense)),
+    ]);
+    const totalSales = Number(salesTotal.total);
+    const totalExpenses = Number(expenseTotal.total);
+    const netProfit = totalSales - totalExpenses;
+    return {
+        totalSales: parseFloat(totalSales.toFixed(2)),
+        totalExpenses: parseFloat(totalExpenses.toFixed(2)),
+        netProfit: parseFloat(netProfit.toFixed(2)),
+        profitMargin: parseFloat((totalSales > 0 ? (netProfit / totalSales) * 100 : 0).toFixed(1)),
+    };
+}
+
 export async function GET(request: Request) {
+    const auth = await authorize(request, "dashboard.view");
+    if (!auth.ok) return auth.response;
     try {
         const { searchParams } = new URL(request.url);
         const period = searchParams.get("period") ?? "month";
@@ -171,15 +224,18 @@ export async function GET(request: Request) {
         const [start, end] = getDateRange(period, years, reqYear, reqMonth);
 
         // Fetch raw rows in date range in parallel
-        const [salesRows, expensesRows] = await Promise.all([
+        const comparison = comparisonRange(period, start, end);
+        const [salesRows, expensesRows, customerRows, previousKpis] = await Promise.all([
             db
                 .select()
                 .from(sales)
-                .where(and(gte(sales.sale_date, start), lte(sales.sale_date, end))),
+                .where(and(gte(sales.sale_date, start), lte(sales.sale_date, end), postedSale)),
             db
                 .select()
                 .from(expenses)
-                .where(and(gte(expenses.expense_date, start), lte(expenses.expense_date, end))),
+                .where(and(gte(expenses.expense_date, start), lte(expenses.expense_date, end), postedExpense)),
+            db.select({ customer_id: customers.customer_id, customer_name: customers.customer_name }).from(customers),
+            comparison ? totalsBetween(comparison.range) : Promise.resolve(null),
         ]);
 
         const labelFn = getLabelFn(period);
@@ -220,7 +276,8 @@ export async function GET(request: Request) {
         // Expense breakdown by category (top 8)
         const expenseCategoryMap = new Map<string, number>();
         for (const r of expensesRows) {
-            const name = r.expense_name ?? "Other";
+            // Expenses created by returns are named after the product; show them as one category
+            const name = r.expense_name ? expenseCategoryOf(r.expense_name) : "Other";
             expenseCategoryMap.set(name, (expenseCategoryMap.get(name) ?? 0) + (r.total ?? 0));
         }
         const expenseBreakdown = Array.from(expenseCategoryMap.entries())
@@ -228,14 +285,18 @@ export async function GET(request: Request) {
             .sort((a, b) => b.value - a.value)
             .slice(0, 8);
 
-        // Top customers by revenue (top 10)
-        const customerMap = new Map<string, number>();
+        // Top customers by revenue (top 10), by customer (under their current name) so a renamed customer counts once
+        const currentNames = new Map(customerRows.map((c) => [Number(c.customer_id), c.customer_name]));
+        const customerMap = new Map<string, { name: string; total: number }>();
         for (const r of salesRows) {
-            const name = r.customer_name ?? "Unknown";
-            customerMap.set(name, (customerMap.get(name) ?? 0) + (r.grand_total ?? 0));
+            const key = r.customer_id ? `id:${r.customer_id}` : `name:${r.customer_name}`;
+            const name = (r.customer_id && currentNames.get(Number(r.customer_id))) || r.customer_name || "Unknown";
+            const entry = customerMap.get(key) ?? { name, total: 0 };
+            entry.total += r.grand_total ?? 0;
+            customerMap.set(key, entry);
         }
-        const topCustomers = Array.from(customerMap.entries())
-            .map(([name, total]) => ({ name, total: parseFloat(total.toFixed(2)) }))
+        const topCustomers = Array.from(customerMap.values())
+            .map(({ name, total }) => ({ name, total: parseFloat(total.toFixed(2)) }))
             .sort((a, b) => b.total - a.total)
             .slice(0, 10);
 
@@ -253,6 +314,10 @@ export async function GET(request: Request) {
                 expenseBreakdown,
                 topCustomers,
                 uniqueCustomers: customerMap.size,
+                // The same figures for the period this one is compared with (null for the multi-year view)
+                comparison: comparison && previousKpis
+                    ? { ...comparison.range, label: comparison.label, kpis: previousKpis }
+                    : null,
             },
             {
                 headers: {

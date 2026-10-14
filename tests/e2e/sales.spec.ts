@@ -38,7 +38,7 @@ test.describe("new sale (invoice builder)", () => {
         await page.locator("input[type=date]").fill(today);
         await page.locator("#customer").selectOption("Sunil Mart");
         await page.getByRole("button", { name: /Post Invoice/ }).click();
-        await expectAlert(page, "Success", "Invoice successfully saved");
+        await expectAlert(page, "Invoice Posted", "Invoice #7 for Sunil Mart has been saved");
 
         const [sale] = await query("SELECT customer_name, grand_total, sale_date FROM sales ORDER BY sale_id DESC LIMIT 1");
         expect(sale).toEqual({ customer_name: "Sunil Mart", grand_total: 610, sale_date: today });

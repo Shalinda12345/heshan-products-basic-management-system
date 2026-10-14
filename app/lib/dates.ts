@@ -20,3 +20,8 @@ export function toIsoDate(date: Date): string {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
+// "YYYY-MM-DD" for a DATE column read through Drizzle, which hands it over as UTC midnight of that date
+export function isoDateFromDb(value: Date | string): string {
+    return typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
+}
