@@ -108,6 +108,33 @@ describe("upgrading an existing database", () => {
         ]);
     });
 
+    it("records when each row added after the upgrade was created", async () => {
+        await conn.query("INSERT INTO sales (customer_name, grand_total, sale_date) VALUES ('Nimal Bakery', 10, '2026-10-14')");
+        await conn.query("INSERT INTO expenses (expense_name, per_expense_amount, total, expense_date) VALUES ('Sugar', 1, 1, '2026-10-14')");
+        await conn.query("INSERT INTO products (product_name, description) VALUES ('Jelly', '')");
+        await conn.query("INSERT INTO customers (customer_name) VALUES ('Hill Cafe')");
+        await conn.query("INSERT INTO employees (employee_name, employee_address, employee_contact_no, maritial_status) VALUES ('Kasun', '', '', '')");
+        expect(await rows(`SELECT
+            (SELECT created_at FROM sales ORDER BY sale_id DESC LIMIT 1) IS NOT NULL AS sales,
+            (SELECT created_at FROM expenses ORDER BY expense_item_id DESC LIMIT 1) IS NOT NULL AS expenses,
+            (SELECT created_at FROM products ORDER BY product_id DESC LIMIT 1) IS NOT NULL AS products,
+            (SELECT created_at FROM customers ORDER BY customer_id DESC LIMIT 1) IS NOT NULL AS customers,
+            (SELECT created_at FROM employees ORDER BY employee_id DESC LIMIT 1) IS NOT NULL AS employees`))
+            .toEqual([{ sales: 1, expenses: 1, products: 1, customers: 1, employees: 1 }]);
+    });
+
+    it("repairs creation-time columns left without a default by an earlier version of this migration", async () => {
+        for (const table of ["sales", "expenses", "products", "customers", "employees"]) {
+            await conn.query(`ALTER TABLE \`${table}\` MODIFY COLUMN created_at TIMESTAMP NULL DEFAULT NULL`);
+        }
+        await runMigrations(conn);
+        const defaults = await rows<{ TABLE_NAME: string; COLUMN_DEFAULT: string | null }>(
+            "SELECT TABLE_NAME, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'created_at' AND TABLE_NAME IN ('sales','expenses','products','customers','employees')"
+        );
+        expect(defaults).toHaveLength(5);
+        for (const { TABLE_NAME, COLUMN_DEFAULT } of defaults) expect(COLUMN_DEFAULT, TABLE_NAME).toMatch(/current_timestamp/i);
+    });
+
     it("can run again without changing anything", async () => {
         await conn.query("UPDATE expenses_list SET kind = 'standard' WHERE expense_name = 'Sugar'");
         const before = await rows("SELECT * FROM stock_movements");

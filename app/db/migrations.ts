@@ -80,8 +80,11 @@ async function addColumn(sql: RunSql, log: Log, table: string, column: string, d
 async function addCreatedAt(sql: RunSql, log: Log, table: string, column = "created_at") {
     await addColumn(sql, log, table, column, "TIMESTAMP NULL DEFAULT NULL");
     const info = await columnInfo(sql, table, column);
-    if (info && info.COLUMN_DEFAULT === null) {
+    // MariaDB reports an explicit DEFAULT NULL as the text 'NULL' (MySQL as SQL NULL)
+    const noDefault = info && (info.COLUMN_DEFAULT === null || String(info.COLUMN_DEFAULT).toUpperCase() === "NULL");
+    if (noDefault) {
         await sql(`ALTER TABLE \`${table}\` MODIFY COLUMN \`${column}\` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP`);
+        log(`  ${table}.${column} now records when each new row is created`);
     }
 }
 
