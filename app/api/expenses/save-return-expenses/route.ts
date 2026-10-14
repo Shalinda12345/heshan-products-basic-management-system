@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/app/db";
-import { expenses, stocks, sales, sale_items, returns } from "@/app/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { expenses, products, sales, sale_items, returns } from "@/app/db/schema";
+import { eq } from "drizzle-orm";
 import { toErrorResponse } from "@/app/lib/api-error";
 import { roundMoney } from "@/app/lib/money";
+import { parseLocalDate } from "@/app/lib/dates";
+import { applyStockMovement } from "@/app/services/stockLedger";
 
 export const dynamic = "force-dynamic";
 
@@ -17,15 +19,6 @@ const RETURN_TYPES = [
 ] as const;
 
 type ReturnType = (typeof RETURN_TYPES)[number];
-
-function parseLocalDate(dateStr: string): Date {
-    if (!dateStr) return new Date();
-    const parts = dateStr.split("T")[0].split("-");
-    if (parts.length === 3) {
-        return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-    }
-    return new Date(dateStr);
-}
 
 function isPositive(value: unknown): boolean {
     return Number.isFinite(Number(value)) && Number(value) > 0;
@@ -88,24 +81,6 @@ export async function POST(request: Request) {
             const returnTotal = roundMoney(Number(quantity) * Number(per_unit_amount));
 
             const result = await db.transaction(async (tx) => {
-                // Validate stock availability (row locked until commit so concurrent deductions can't overdraw it)
-                const [currentStock] = await tx
-                    .select()
-                    .from(stocks)
-                    .where(eq(stocks.product_id, Number(product_id)))
-                    .for("update");
-
-                if (!currentStock) throw new Error(`No stock record found for product ID ${product_id}.`);
-                if (Number(currentStock.quantity) < Number(quantity)) {
-                    throw new Error(`Insufficient stock. Available: ${currentStock.quantity}, requested: ${quantity}.`);
-                }
-
-                // Deduct stock
-                await tx
-                    .update(stocks)
-                    .set({ quantity: sql`${stocks.quantity} - ${Number(quantity)}` })
-                    .where(eq(stocks.product_id, Number(product_id)));
-
                 // Create expense entry
                 const [expenseResult] = await tx.insert(expenses).values({
                     expense_name: `Stock Expense Return: ${product_name}`,
@@ -117,6 +92,20 @@ export async function POST(request: Request) {
 
                 const newExpenseId = expenseResult.insertId;
 
+                // Deduct stock (validated and locked) and log it in the stock ledger
+                const movement = await applyStockMovement(tx, {
+                    productId: Number(product_id),
+                    productName: String(product_name),
+                    movementType: "write_off",
+                    quantity: Number(quantity),
+                    movementDate: parsedDate,
+                    reference: `Expense #${newExpenseId}`,
+                    messages: {
+                        noStockRow: `No stock record found for product ID ${product_id}.`,
+                        insufficient: (available) => `Insufficient stock. Available: ${available}, requested: ${quantity}.`,
+                    },
+                });
+
                 // Insert return record
                 await tx.insert(returns).values({
                     return_type: "stock_expense_return",
@@ -124,7 +113,7 @@ export async function POST(request: Request) {
                     quantity: Number(quantity),
                     per_unit_amount: Number(per_unit_amount),
                     total: Number(returnTotal),
-                    stock_id: Number(currentStock.stock_id),
+                    stock_id: movement.stockId,
                     expense_item_id: Number(newExpenseId),
                     return_date: parsedDate,
                 });
@@ -210,18 +199,26 @@ export async function POST(request: Request) {
                     .set({ grand_total: newGrandTotal })
                     .where(eq(sales.sale_id, Number(sale_id)));
 
-                // Add returned qty BACK to selected stock
-                const [creditStock] = await tx
+                // Add returned qty BACK to the selected stock and log it in the stock ledger
+                const [creditProduct] = await tx
                     .select()
-                    .from(stocks)
-                    .where(eq(stocks.product_id, Number(product_id)));
+                    .from(products)
+                    .where(eq(products.product_id, Number(product_id)));
 
-                if (!creditStock) throw new Error(`No stock record found for product ID ${product_id}.`);
+                const noStockRow = `No stock record found for product ID ${product_id}.`;
+                if (!creditProduct) throw new Error(noStockRow);
 
-                await tx
-                    .update(stocks)
-                    .set({ quantity: sql`${stocks.quantity} + ${returnQty}` })
-                    .where(eq(stocks.product_id, Number(product_id)));
+                const movement = await applyStockMovement(tx, {
+                    productId: creditProduct.product_id,
+                    productName: creditProduct.product_name,
+                    movementType: "sale_return",
+                    quantity: returnQty,
+                    movementDate: parsedDate,
+                    reference: `Sale #${sale_id}`,
+                    note: creditProduct.product_name === sale_product_name ? null : `Returned as "${sale_product_name}"`,
+                    requireStockRow: true,
+                    messages: { noStockRow },
+                });
 
                 // Insert return record
                 await tx.insert(returns).values({
@@ -230,7 +227,7 @@ export async function POST(request: Request) {
                     quantity: returnQty,
                     per_unit_amount: Number(sale_per_unit_amount),
                     total: returnLineTotal,
-                    stock_id: Number(creditStock.stock_id),
+                    stock_id: movement.stockId,
                     sale_id: Number(sale_id),
                     return_date: parsedDate,
                 });

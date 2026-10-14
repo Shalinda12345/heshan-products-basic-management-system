@@ -1,7 +1,9 @@
 import { db } from "../db";
-import { sales, sale_items, products, stocks } from "../db/schema";
-import { eq, sql } from "drizzle-orm";
+import { sales, sale_items, products } from "../db/schema";
+import { eq } from "drizzle-orm";
 import { roundMoney } from "../lib/money";
+import { parseLocalDate } from "../lib/dates";
+import { applyStockMovement } from "./stockLedger";
 
 interface SaleItemInput{
     product_name: string;
@@ -15,15 +17,6 @@ interface CreateSaleInput{
     sale_date: string;
     grand_total?: number; // ignored: recomputed from the line totals
     items: SaleItemInput[];
-}
-
-function parseLocalDate(dateStr: string): Date {
-    if (!dateStr) return new Date();
-    const parts = dateStr.split("T")[0].split("-");
-    if (parts.length === 3) {
-        return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-    }
-    return new Date(dateStr);
 }
 
 export async function InsertSales(data: CreateSaleInput) {
@@ -75,12 +68,11 @@ export async function InsertSales(data: CreateSaleInput) {
 
         await tx.insert(sale_items).values(itemsPayload);
 
-        // Deduct quantities from stocks
-        for (const item of data.items) {
-            // Find the product by its name to get its product_id
+        // Deduct each line from stock and log it in the stock ledger
+        for (const item of itemRows) {
             const [prod] = await tx.select()
                 .from(products)
-                .where(eq(products.product_name, item.product_name.trim()));
+                .where(eq(products.product_name, item.product_name));
 
             if (!prod) {
                 throw new Error(
@@ -88,30 +80,20 @@ export async function InsertSales(data: CreateSaleInput) {
                 );
             }
 
-            // Check if a stock record exists for this product. FOR UPDATE locks the row until commit,
-            // so concurrent sales can't both pass the availability check and oversell.
-            const [existingStock] = await tx.select()
-                .from(stocks)
-                .where(eq(stocks.product_id, prod.product_id))
-                .for("update");
-
-            if (!existingStock) {
-                throw new Error(
-                    `No stock record found for "${item.product_name}". Cannot sell a product with no stock.`
-                );
-            }
-
-            // Validate sufficient stock before deducting
-            if (Number(existingStock.quantity) < Number(item.quantity)) {
-                throw new Error(
-                    `Insufficient stock for "${item.product_name}". Available: ${existingStock.quantity}, Requested: ${item.quantity}`
-                );
-            }
-
-            // Atomically subtract the quantity from stock using SQL
-            await tx.update(stocks)
-                .set({ quantity: sql`${stocks.quantity} - ${Number(item.quantity)}` })
-                .where(eq(stocks.product_id, prod.product_id));
+            await applyStockMovement(tx, {
+                productId: prod.product_id,
+                productName: prod.product_name,
+                movementType: "sale",
+                quantity: item.quantity,
+                movementDate: saleDateObj,
+                reference: `Sale #${newSaleId}`,
+                note: data.customer_name.trim(),
+                messages: {
+                    noStockRow: `No stock record found for "${item.product_name}". Cannot sell a product with no stock.`,
+                    insufficient: (available) =>
+                        `Insufficient stock for "${item.product_name}". Available: ${available}, Requested: ${item.quantity}`,
+                },
+            });
         }
 
         return { sale_id: newSaleId };
