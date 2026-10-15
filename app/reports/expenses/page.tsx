@@ -1,6 +1,5 @@
 'use client';
 
-import { Suspense } from 'react';
 import ReportsNavigation from '@/app/components/reports/reports-navigation';
 import { PeriodBar, usePeriod } from '@/app/components/reports/period';
 import { CHART, MonthlyTrendChart, RankingChart } from '@/app/components/reports/charts';
@@ -22,7 +21,7 @@ interface ExpensesReport {
     totals: { total: number; prev_total: number; change: number | null };
 }
 
-function ExpensesReportContent() {
+export default function ExpensesReportPage() {
     const period = usePeriod();
     const report = useResource<ExpensesReport>(`/api/reports/expenses${queryString(period.range)}`);
     const data = report.data;
@@ -132,13 +131,5 @@ function ExpensesReportContent() {
                 </div>
             )}
         </PageShell>
-    );
-}
-
-export default function ExpensesReportPage() {
-    return (
-        <Suspense fallback={<Spinner />}>
-            <ExpensesReportContent />
-        </Suspense>
     );
 }

@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
 import type { Role } from "@/app/lib/permissions";
-import { BACKGROUND_REQUEST_HEADER, createSessionToken, readSessionToken, shouldRenewSession } from "@/app/lib/session";
+import { BACKGROUND_REQUEST_HEADER } from "@/app/lib/background-request";
+import { createSessionToken, readSessionToken, shouldRenewSession } from "@/app/lib/session";
 import { config, proxy } from "@/proxy";
 
 async function run(path: string, token?: string, init: { method?: string; headers?: Record<string, string> } = {}) {

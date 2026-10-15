@@ -1,6 +1,5 @@
 'use client';
 
-import { Suspense } from 'react';
 import ReportsNavigation from '@/app/components/reports/reports-navigation';
 import { PeriodBar, usePeriod } from '@/app/components/reports/period';
 import { ProfitChart, RevenueExpenseChart } from '@/app/components/reports/charts';
@@ -43,7 +42,9 @@ function insights(data: Overview): string[] {
     if (c.revenue > 0 || p.revenue > 0) {
         lines.push(changes.revenue === null
             ? `Revenue was ${formatMoney(c.revenue)} (nothing was sold in ${previous.label}).`
-            : `Revenue was ${formatMoney(c.revenue)}, ${changes.revenue >= 0 ? 'up' : 'down'} ${formatChange(Math.abs(changes.revenue)).replace('+', '')} on ${previous.label} (${formatMoney(p.revenue)}).`);
+            : Math.round(changes.revenue * 10) === 0
+                ? `Revenue was ${formatMoney(c.revenue)}, about the same as in ${previous.label} (${formatMoney(p.revenue)}).`
+                : `Revenue was ${formatMoney(c.revenue)}, ${changes.revenue > 0 ? 'up' : 'down'} ${formatChange(Math.abs(changes.revenue)).replace('+', '')} on ${previous.label} (${formatMoney(p.revenue)}).`);
     }
     lines.push(c.profit >= 0
         ? `The business made a net profit of ${formatMoney(c.profit)}${c.margin !== null ? `, keeping ${formatPercent(c.margin)} of every rupee of sales` : ''}.`
@@ -65,7 +66,7 @@ function insights(data: Overview): string[] {
     return lines;
 }
 
-function ProfitAndLoss() {
+export default function ProfitAndLossPage() {
     const period = usePeriod();
     const report = useResource<Overview>(`/api/reports/overview${queryString(period.range)}`);
     const data = report.data;
@@ -194,13 +195,5 @@ function ProfitAndLoss() {
                 </div>
             )}
         </PageShell>
-    );
-}
-
-export default function ProfitAndLossPage() {
-    return (
-        <Suspense fallback={<Spinner />}>
-            <ProfitAndLoss />
-        </Suspense>
     );
 }

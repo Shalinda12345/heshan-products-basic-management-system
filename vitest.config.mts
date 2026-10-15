@@ -27,7 +27,7 @@ export default defineConfig({
                 test: {
                     name: "api",
                     include: ["tests/api/**/*.test.ts"],
-                    globalSetup: ["tests/helpers/vitest-global-setup.ts"],
+                    globalSetup: ["tests/helpers/global-setup.ts"],
                     setupFiles: ["tests/helpers/api-setup.ts"],
                     // All API tests share one database, so run test files one at a time
                     fileParallelism: false,

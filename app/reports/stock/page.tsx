@@ -9,7 +9,6 @@ import { Badge, Notice, Spinner } from '@/app/components/ui/feedback';
 import { downloadCsv } from '@/app/lib/csv';
 import { formatAmount, formatDate, formatMoney, formatQty } from '@/app/lib/format';
 import { useResource } from '@/app/lib/use-resource';
-import { Suspense } from 'react';
 
 interface StockRow {
     product_id: number;
@@ -47,7 +46,7 @@ function StatusCell({ row }: { row: StockRow }) {
     return <Badge tone="green">✓ OK</Badge>;
 }
 
-function StockReportContent() {
+export default function StockReportPage() {
     const report = useResource<StockReport>('/api/reports/stock');
     const data = report.data;
     const reorder = (data?.rows ?? []).filter((r) => r.is_active && (r.status !== 'ok' || (r.days_of_cover !== null && r.days_of_cover < REORDER_DAYS)));
@@ -134,13 +133,5 @@ function StockReportContent() {
                 </div>
             )}
         </PageShell>
-    );
-}
-
-export default function StockReportPage() {
-    return (
-        <Suspense fallback={<Spinner />}>
-            <StockReportContent />
-        </Suspense>
     );
 }

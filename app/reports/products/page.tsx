@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import ReportsNavigation from '@/app/components/reports/reports-navigation';
 import { PeriodBar, usePeriod } from '@/app/components/reports/period';
@@ -11,7 +11,7 @@ import { Button, filterClass } from '@/app/components/ui/form';
 import { Badge, Notice, Spinner } from '@/app/components/ui/feedback';
 import { queryString } from '@/app/lib/api-client';
 import { downloadCsv } from '@/app/lib/csv';
-import { formatAmount, formatMoney, formatPercent, formatQty } from '@/app/lib/format';
+import { formatAmount, formatMoney, formatPercent, formatQty, percentChange } from '@/app/lib/format';
 import { useResource } from '@/app/lib/use-resource';
 
 interface ProductRow {
@@ -43,7 +43,7 @@ interface ProductsReport {
 type SortKey = 'revenue' | 'units' | 'change' | 'est_margin';
 const SORTS: Record<SortKey, string> = { revenue: 'Revenue', units: 'Units sold', change: 'Change', est_margin: 'Estimated margin' };
 
-function ProductsReportContent() {
+export default function ProductsReportPage() {
     const period = usePeriod();
     const report = useResource<ProductsReport>(`/api/reports/products${queryString(period.range)}`);
     const [sort, setSort] = useState<SortKey>('revenue');
@@ -54,7 +54,7 @@ function ProductsReportContent() {
         return value(b) - value(a) || b.revenue - a.revenue;
     });
     const top = (data?.rows ?? []).filter((r) => r.revenue > 0).slice(0, 10).map((r) => ({ name: r.product_name, value: r.revenue }));
-    const revenueChange = data && data.totals.prev_revenue ? ((data.totals.revenue - data.totals.prev_revenue) / data.totals.prev_revenue) * 100 : null;
+    const revenueChange = data ? percentChange(data.totals.revenue, data.totals.prev_revenue) : null;
 
     const exportCsv = () => data && downloadCsv(`product-performance-${data.period.label.replace(/\s+/g, '-')}.csv`, rows, [
         { header: 'Product', value: (r) => r.product_name },
@@ -164,13 +164,5 @@ function ProductsReportContent() {
                 </div>
             )}
         </PageShell>
-    );
-}
-
-export default function ProductsReportPage() {
-    return (
-        <Suspense fallback={<Spinner />}>
-            <ProductsReportContent />
-        </Suspense>
     );
 }

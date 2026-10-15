@@ -1,45 +1,19 @@
 import { NextResponse } from "next/server";
-import { db } from "@/app/db";
-import { expenses } from "@/app/db/schema";
-import { and, gte, lte, desc } from "drizzle-orm";
-import { toReadErrorResponse } from "@/app/lib/api-error";
+import { readErrorJson } from "@/app/lib/api-error";
 import { authorize } from "@/app/lib/auth";
-import { postedExpense } from "@/app/services/expenses";
+import { periodParams } from "@/app/lib/validation";
+import { postedExpensesBetween } from "@/app/services/expenses";
 
 export const dynamic = "force-dynamic";
 
+// GET /api/expenses/get-monthly-expenses — the posted expenses dated this month, newest first (or another month with ?year=&month=)
 export async function GET(request: Request) {
     const auth = await authorize(request, "expenses.view");
     if (!auth.ok) return auth.response;
     try {
-        const { searchParams } = new URL(request.url);
-        const now = new Date();
-        const year = searchParams.get("year") ? parseInt(searchParams.get("year")!, 10) : now.getFullYear();
-        const month = searchParams.get("month") ? parseInt(searchParams.get("month")!, 10) - 1 : now.getMonth();
-
-        // 1. Get the first day of the target month at 00:00:00.000
-        const startOfMonth = new Date(year, month, 1, 0, 0, 0, 0);
-
-        // 2. Get the last day of the target month at 23:59:59.999
-        const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
-
-        // 3. Query the database
-        const monthlyExpenses = await db
-            .select()
-            .from(expenses)
-            .where(
-                and(
-                    gte(expenses.expense_date, startOfMonth),
-                    lte(expenses.expense_date, endOfMonth),
-                    postedExpense
-                )
-            )
-            .orderBy(desc(expenses.expense_date));
-
-        return NextResponse.json(monthlyExpenses);
+        const { start, end } = periodParams(new URL(request.url).searchParams, "month");
+        return NextResponse.json(await postedExpensesBetween(start, end));
     } catch (error) {
-        console.error("Failed to fetch monthly expenses: ", error);
-        const { message, status } = toReadErrorResponse(error);
-        return NextResponse.json({ error: message }, { status });
+        return readErrorJson(error, "Failed to fetch monthly expenses:");
     }
 }

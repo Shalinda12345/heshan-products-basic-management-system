@@ -2,6 +2,14 @@
 
 import { Button } from './form';
 
+// Wraps a filter's setter so that changing the filter also goes back to the first page
+export function withPageReset(setPage: (page: number) => void) {
+    return <T,>(setter: (value: T) => void) => (value: T) => {
+        setter(value);
+        setPage(1);
+    };
+}
+
 export default function Pagination({ page, pageSize, total, onPage }: { page: number; pageSize: number; total: number; onPage: (page: number) => void }) {
     const pages = Math.max(1, Math.ceil(total / pageSize));
     if (total === 0) return null;

@@ -2,168 +2,75 @@ import { NextResponse } from "next/server";
 import { db } from "@/app/db";
 import { customers, sales, expenses } from "@/app/db/schema";
 import { and, gte, lte, sql } from "drizzle-orm";
-import { toReadErrorResponse } from "@/app/lib/api-error";
+import { RequestError, readErrorJson } from "@/app/lib/api-error";
 import { authorize } from "@/app/lib/auth";
-import { parseLocalDate, toIsoDate } from "@/app/lib/dates";
-import { samePeriodBefore, type DateRange } from "@/app/lib/periods";
+import { endOfDay, isoDateFromDb, parseLocalDate, startOfDay, toIsoDate } from "@/app/lib/dates";
+import { MONTH_ABBR } from "@/app/lib/format";
+import { addDays, previousPeriod, samePeriodBefore, weekContaining, type DateRange } from "@/app/lib/periods";
+import { intParam, yearMonthParams } from "@/app/lib/validation";
 import { postedSale } from "@/app/services/sales";
 import { postedExpense } from "@/app/services/expenses";
 import { expenseCategoryOf } from "@/app/services/reports";
 
 export const dynamic = "force-dynamic";
 
-// ---------- helpers ----------
-function startOfDay(d: Date) {
-    const r = new Date(d);
-    r.setHours(0, 0, 0, 0);
-    return r;
-}
-function endOfDay(d: Date) {
-    const r = new Date(d);
-    r.setHours(23, 59, 59, 999);
-    return r;
-}
+const PERIODS = ["day", "week", "month", "year", "multi"];
 
-// Returns [start, end] dates based on the requested period
+const round2 = (n: number) => parseFloat(n.toFixed(2));
+
+// The dates the selected period covers: today, this week up to today, a month, a year, or 2-10 whole years
 function getDateRange(period: string, years: number, selectedYear?: number, selectedMonth?: number): [Date, Date] {
     const now = new Date();
 
-    if (period === "day") {
-        return [startOfDay(now), endOfDay(now)];
-    }
-
-    if (period === "week") {
-        const start = new Date(now);
-        const dow = now.getDay();
-        // Make week start on Monday
-        start.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
-        return [startOfDay(start), endOfDay(now)];
-    }
+    if (period === "day") return [startOfDay(now), endOfDay(now)];
+    if (period === "week") return [weekContaining(now).start, endOfDay(now)];
 
     if (period === "month") {
         const yr = selectedYear ?? now.getFullYear();
         const mo = selectedMonth ? selectedMonth - 1 : now.getMonth();
-        const start = new Date(yr, mo, 1, 0, 0, 0, 0);
-        const end = new Date(yr, mo + 1, 0, 23, 59, 59, 999);
-        return [start, end];
+        return [new Date(yr, mo, 1), endOfDay(new Date(yr, mo + 1, 0))];
     }
 
-    if (period === "year") {
-        const yr = selectedYear ?? now.getFullYear();
-        const start = new Date(yr, 0, 1, 0, 0, 0, 0);
-        const end = new Date(yr, 11, 31, 23, 59, 59, 999);
-        return [start, end];
-    }
-
-    // multi-year: go back `years` full years from Jan 1 of (currentYear - years + 1)
-    const safeYears = Math.max(2, Math.min(years, 10));
-    const endYr = selectedYear ?? now.getFullYear();
-    const start = new Date(endYr - safeYears + 1, 0, 1, 0, 0, 0, 0);
-    const end = new Date(endYr, 11, 31, 23, 59, 59, 999);
-    return [start, end];
+    const lastYear = selectedYear ?? now.getFullYear();
+    const firstYear = period === "year" ? lastYear : lastYear - Math.max(2, Math.min(years, 10)) + 1;
+    return [new Date(firstYear, 0, 1), endOfDay(new Date(lastYear, 11, 31))];
 }
 
-// Safely parse a date value returned by Drizzle (may be Date object or string)
-function parseDate(raw: Date | string | null | undefined): Date | null {
-    if (!raw) return null;
-    if (raw instanceof Date) return raw;
-    // MySQL date strings come back as "YYYY-MM-DD" — parse as local time
-    // to avoid UTC midnight shifting the day.
-    const parts = (raw as string).split("-");
-    if (parts.length === 3) {
-        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-    }
-    return new Date(raw as string);
-}
+const dayLabel = (d: Date) => `${d.getDate()} ${MONTH_ABBR[d.getMonth()]}`;
+const monthYearLabel = (d: Date) => `${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}`;
 
-// Builds an aggregation map keyed by chart label
-function aggregateByLabel<T>(
-    records: T[],
-    getDate: (r: T) => Date | string | null | undefined,
-    getLabelFn: (d: Date) => string,
-    getValue: (r: T) => number
-): Map<string, number> {
-    const map = new Map<string, number>();
-    for (const r of records) {
-        const d = parseDate(getDate(r));
-        if (!d) continue;
-        const label = getLabelFn(d);
-        map.set(label, (map.get(label) ?? 0) + getValue(r));
-    }
-    return map;
-}
+// The chart's buckets for a period: the label of each, and the label a date falls under
+function chartBuckets(period: string, start: Date, end: Date): { labels: string[]; labelOf: (d: Date) => string } {
+    const each = (step: (d: Date) => Date) => {
+        const dates: Date[] = [];
+        for (let d = start; d <= end; d = step(d)) dates.push(d);
+        return dates;
+    };
+    const days = () => each((d) => addDays(d, 1));
+    const months = () => each((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
 
-// Generates the ordered list of bucket labels for a period
-function buildLabels(period: string, start: Date, end: Date): string[] {
-    // FIX: "day" period uses sale_date which is a DATE column (no time).
-    // Hourly buckets are meaningless. Instead show each day in the last 7 days
-    // up to and including today so the chart always has a point for today.
-    if (period === "day") {
-        // Show today's date as a single label (one summary bar)
-        return [formatDate(start)];
-    }
-
-    if (period === "week") {
-        // Enumerate Mon → current day of week
-        const labels: string[] = [];
-        const cur = new Date(start);
-        while (cur <= end) {
-            labels.push(formatDate(cur));
-            cur.setDate(cur.getDate() + 1);
-        }
-        return labels;
-    }
-
+    // Sales and expenses are dated by day, so "today" is a single bucket
+    if (period === "day") return { labels: [dayLabel(start)], labelOf: dayLabel };
+    if (period === "week") return { labels: days().map(dayLabel), labelOf: dayLabel };
     if (period === "month") {
-        const labels: string[] = [];
-        const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
-        for (let d = 1; d <= daysInMonth; d++) {
-            labels.push(String(d));
-        }
-        return labels;
-    }
-
-    if (period === "year") {
-        return ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    }
-
-    // multi-year: one label per month across the range
-    const labels: string[] = [];
-    const cur = new Date(start.getFullYear(), start.getMonth(), 1);
-    while (cur <= end) {
-        labels.push(formatMonthYear(cur));
-        cur.setMonth(cur.getMonth() + 1);
-    }
-    return labels;
-}
-
-function formatDate(d: Date): string {
-    return `${d.getDate()} ${d.toLocaleString("default", { month: "short" })}`;
-}
-
-function formatMonthYear(d: Date): string {
-    return `${d.toLocaleString("default", { month: "short" })} ${d.getFullYear()}`;
-}
-
-// Maps a record's date to the correct chart label for the given period
-function getLabelFn(period: string): (d: Date) => string {
-    if (period === "day") {
-        // FIX: no hourly granularity — group by full date string
-        return (d) => formatDate(d);
-    }
-    if (period === "week") {
-        // Group by date (Mon 30 Jun, etc.)
-        return (d) => formatDate(d);
-    }
-    if (period === "month") {
-        return (d) => String(d.getDate());
+        const labelOf = (d: Date) => String(d.getDate());
+        return { labels: days().map(labelOf), labelOf };
     }
     if (period === "year") {
-        const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        return (d) => names[d.getMonth()];
+        const labelOf = (d: Date) => MONTH_ABBR[d.getMonth()];
+        return { labels: months().map(labelOf), labelOf };
     }
-    // multi-year
-    return (d) => formatMonthYear(d);
+    return { labels: months().map(monthYearLabel), labelOf: monthYearLabel };
+}
+
+// Adds up `value` per chart bucket
+function totalsByLabel<T>(rows: T[], dateOf: (row: T) => Date | string, labelOf: (d: Date) => string, value: (row: T) => number) {
+    const totals = new Map<string, number>();
+    for (const row of rows) {
+        const label = labelOf(parseLocalDate(isoDateFromDb(dateOf(row))));
+        totals.set(label, (totals.get(label) ?? 0) + value(row));
+    }
+    return totals;
 }
 
 // The stretch of time the selected period is compared with: the same days of the previous day/week/month/year
@@ -175,20 +82,23 @@ function comparisonRange(period: string, start: Date, end: Date): { range: DateR
     const unit = period === "day" ? "day" : period === "week" ? "week" : period === "year" ? "year" : "month";
     // Weeks and days are already "so far" ranges (the week runs Monday to today)
     const span: DateRange = { from: toIsoDate(start), to: toIsoDate(inProgress && (unit === "month" || unit === "year") ? now : end) };
-    const range = samePeriodBefore(span, unit);
     const names = { day: "yesterday", week: "the same days last week", month: "last month", year: "last year" } as const;
     const label = inProgress && unit !== "day"
         ? (unit === "week" ? `vs ${names.week}` : `vs the same days ${names[unit]}`)
         : `vs ${unit === "day" ? names.day : `the previous ${unit}`}`;
-    if (!inProgress && unit !== "day" && unit !== "week") {
-        // A finished month or year is compared with the whole one before it
-        const from = parseLocalDate(span.from);
-        const prev = unit === "month"
-            ? { from: new Date(from.getFullYear(), from.getMonth() - 1, 1), to: new Date(from.getFullYear(), from.getMonth(), 0) }
-            : { from: new Date(from.getFullYear() - 1, 0, 1), to: new Date(from.getFullYear() - 1, 11, 31) };
-        return { range: { from: toIsoDate(prev.from), to: toIsoDate(prev.to) }, label };
-    }
-    return { range, label };
+    // A finished month or year is compared with the whole one before it
+    const finished = !inProgress && (unit === "month" || unit === "year");
+    return { range: finished ? previousPeriod(span) : samePeriodBefore(span, unit), label };
+}
+
+function kpisOf(totalSales: number, totalExpenses: number) {
+    const netProfit = totalSales - totalExpenses;
+    return {
+        totalSales: round2(totalSales),
+        totalExpenses: round2(totalExpenses),
+        netProfit: round2(netProfit),
+        profitMargin: parseFloat((totalSales > 0 ? (netProfit / totalSales) * 100 : 0).toFixed(1)),
+    };
 }
 
 async function totalsBetween(range: DateRange) {
@@ -200,15 +110,7 @@ async function totalsBetween(range: DateRange) {
         db.select({ total: sql<number>`COALESCE(SUM(${expenses.total}), 0)` })
             .from(expenses).where(and(gte(expenses.expense_date, from), lte(expenses.expense_date, to), postedExpense)),
     ]);
-    const totalSales = Number(salesTotal.total);
-    const totalExpenses = Number(expenseTotal.total);
-    const netProfit = totalSales - totalExpenses;
-    return {
-        totalSales: parseFloat(totalSales.toFixed(2)),
-        totalExpenses: parseFloat(totalExpenses.toFixed(2)),
-        netProfit: parseFloat(netProfit.toFixed(2)),
-        profitMargin: parseFloat((totalSales > 0 ? (netProfit / totalSales) * 100 : 0).toFixed(1)),
-    };
+    return kpisOf(Number(salesTotal.total), Number(expenseTotal.total));
 }
 
 export async function GET(request: Request) {
@@ -216,14 +118,13 @@ export async function GET(request: Request) {
     if (!auth.ok) return auth.response;
     try {
         const { searchParams } = new URL(request.url);
-        const period = searchParams.get("period") ?? "month";
-        const years = parseInt(searchParams.get("years") ?? "2", 10);
-        const reqYear = searchParams.get("year") ? parseInt(searchParams.get("year")!, 10) : undefined;
-        const reqMonth = searchParams.get("month") ? parseInt(searchParams.get("month")!, 10) : undefined;
+        const period = searchParams.get("period") || "month";
+        if (!PERIODS.includes(period)) throw new RequestError(`Invalid parameter: period must be one of ${PERIODS.join(", ")}`);
+        // The multi-year view covers 2 to 10 years
+        const years = intParam(searchParams, "years", 0, 100) ?? 2;
+        const { year: reqYear, month: reqMonth } = yearMonthParams(searchParams);
 
-        const [start, end] = getDateRange(period, years, reqYear, reqMonth);
-
-        // Fetch raw rows in date range in parallel
+        const [start, end] = getDateRange(period, years, reqYear ?? undefined, reqMonth ?? undefined);
         const comparison = comparisonRange(period, start, end);
         const [salesRows, expensesRows, customerRows, previousKpis] = await Promise.all([
             db
@@ -235,43 +136,21 @@ export async function GET(request: Request) {
                 .from(expenses)
                 .where(and(gte(expenses.expense_date, start), lte(expenses.expense_date, end), postedExpense)),
             db.select({ customer_id: customers.customer_id, customer_name: customers.customer_name }).from(customers),
-            comparison ? totalsBetween(comparison.range) : Promise.resolve(null),
+            comparison ? totalsBetween(comparison.range) : null,
         ]);
 
-        const labelFn = getLabelFn(period);
-        const labels = buildLabels(period, start, end);
-
-        // Aggregate totals per bucket
-        const salesMap = aggregateByLabel(
-            salesRows,
-            (r) => r.sale_date,
-            labelFn,
-            (r) => r.grand_total ?? 0
-        );
-        const expensesMap = aggregateByLabel(
-            expensesRows,
-            (r) => r.expense_date,
-            labelFn,
-            (r) => r.total ?? 0
-        );
-
-        // Build chart data — every label guaranteed to appear (zeros for empty buckets)
+        // Every bucket appears in the chart, with zeros when nothing happened in it
+        const { labels, labelOf } = chartBuckets(period, start, end);
+        const salesMap = totalsByLabel(salesRows, (r) => r.sale_date, labelOf, (r) => r.grand_total ?? 0);
+        const expensesMap = totalsByLabel(expensesRows, (r) => r.expense_date, labelOf, (r) => r.total ?? 0);
         const chartData = labels.map((label) => {
             const s = salesMap.get(label) ?? 0;
             const e = expensesMap.get(label) ?? 0;
-            return {
-                label,
-                sales: parseFloat(s.toFixed(2)),
-                expenses: parseFloat(e.toFixed(2)),
-                profit: parseFloat((s - e).toFixed(2)),
-            };
+            return { label, sales: round2(s), expenses: round2(e), profit: round2(s - e) };
         });
 
-        // KPI totals
         const totalSales = salesRows.reduce((acc, r) => acc + (r.grand_total ?? 0), 0);
         const totalExpenses = expensesRows.reduce((acc, r) => acc + (r.total ?? 0), 0);
-        const netProfit = totalSales - totalExpenses;
-        const profitMargin = totalSales > 0 ? (netProfit / totalSales) * 100 : 0;
 
         // Expense breakdown by category (top 8)
         const expenseCategoryMap = new Map<string, number>();
@@ -281,7 +160,7 @@ export async function GET(request: Request) {
             expenseCategoryMap.set(name, (expenseCategoryMap.get(name) ?? 0) + (r.total ?? 0));
         }
         const expenseBreakdown = Array.from(expenseCategoryMap.entries())
-            .map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }))
+            .map(([name, value]) => ({ name, value: round2(value) }))
             .sort((a, b) => b.value - a.value)
             .slice(0, 8);
 
@@ -296,21 +175,15 @@ export async function GET(request: Request) {
             customerMap.set(key, entry);
         }
         const topCustomers = Array.from(customerMap.values())
-            .map(({ name, total }) => ({ name, total: parseFloat(total.toFixed(2)) }))
+            .map(({ name, total }) => ({ name, total: round2(total) }))
             .sort((a, b) => b.total - a.total)
             .slice(0, 10);
 
-        // FIX: always send no-cache headers so browser/Next.js never serves stale data
         return NextResponse.json(
             {
                 period,
                 chartData,
-                kpis: {
-                    totalSales: parseFloat(totalSales.toFixed(2)),
-                    totalExpenses: parseFloat(totalExpenses.toFixed(2)),
-                    netProfit: parseFloat(netProfit.toFixed(2)),
-                    profitMargin: parseFloat(profitMargin.toFixed(1)),
-                },
+                kpis: kpisOf(totalSales, totalExpenses),
                 expenseBreakdown,
                 topCustomers,
                 uniqueCustomers: customerMap.size,
@@ -319,22 +192,9 @@ export async function GET(request: Request) {
                     ? { ...comparison.range, label: comparison.label, kpis: previousKpis }
                     : null,
             },
-            {
-                headers: {
-                    "Cache-Control": "no-store, no-cache, must-revalidate",
-                    Pragma: "no-cache",
-                },
-            }
+            { headers: { "Cache-Control": "no-store" } }
         );
     } catch (error) {
-        console.error("Dashboard summary error:", error);
-        const { message, status } = toReadErrorResponse(error);
-        return NextResponse.json(
-            { error: message },
-            {
-                status,
-                headers: { "Cache-Control": "no-store" },
-            }
-        );
+        return readErrorJson(error, "Dashboard summary error:");
     }
 }

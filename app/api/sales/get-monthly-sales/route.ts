@@ -1,45 +1,19 @@
 import { NextResponse } from "next/server";
-import { db } from "@/app/db";
-import { sales } from "@/app/db/schema";
-import { and, gte, lte, desc } from "drizzle-orm";
-import { toReadErrorResponse } from "@/app/lib/api-error";
+import { readErrorJson } from "@/app/lib/api-error";
 import { authorize } from "@/app/lib/auth";
-import { postedSale } from "@/app/services/sales";
+import { periodParams } from "@/app/lib/validation";
+import { postedSalesBetween } from "@/app/services/sales";
 
 export const dynamic = "force-dynamic";
 
+// GET /api/sales/get-monthly-sales — the posted invoices dated this month, newest first (or another month with ?year=&month=)
 export async function GET(request: Request) {
     const auth = await authorize(request, "sales.view");
     if (!auth.ok) return auth.response;
     try {
-        const { searchParams } = new URL(request.url);
-        const now = new Date();
-        const year = searchParams.get("year") ? parseInt(searchParams.get("year")!, 10) : now.getFullYear();
-        const month = searchParams.get("month") ? parseInt(searchParams.get("month")!, 10) - 1 : now.getMonth();
-
-        // 1. Get the first day of the target month at 00:00:00.000
-        const startOfMonth = new Date(year, month, 1, 0, 0, 0, 0);
-
-        // 2. Get the last day of the target month at 23:59:59.999
-        const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
-
-        // 3. Query the database
-        const monthlySales = await db
-            .select()
-            .from(sales)
-            .where(
-                and(
-                    gte(sales.sale_date, startOfMonth),
-                    lte(sales.sale_date, endOfMonth),
-                    postedSale
-                )
-            )
-            .orderBy(desc(sales.sale_date));
-
-        return NextResponse.json(monthlySales);
+        const { start, end } = periodParams(new URL(request.url).searchParams, "month");
+        return NextResponse.json(await postedSalesBetween(start, end));
     } catch (error) {
-        console.error("Failed to fetch monthly sales: ", error);
-        const { message, status } = toReadErrorResponse(error);
-        return NextResponse.json({ error: message }, { status });
+        return readErrorJson(error, "Failed to fetch monthly sales:");
     }
 }

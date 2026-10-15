@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/app/lib/session";
 import { cookieFromHeader, userForToken } from "@/app/lib/auth";
-import { toReadErrorResponse } from "@/app/lib/api-error";
+import { readErrorJson } from "@/app/lib/api-error";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +18,6 @@ export async function GET(request: Request) {
         return response;
     } catch (error) {
         // The database can't be asked right now: say so rather than signing everyone out
-        console.error("Session check failed:", error);
-        const { message, status } = toReadErrorResponse(error);
-        return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
+        return readErrorJson(error, "Session check failed:");
     }
 }

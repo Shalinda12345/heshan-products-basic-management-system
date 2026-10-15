@@ -7,7 +7,7 @@ import { Notice } from '@/app/components/ui/feedback';
 import { apiSend, errorMessage } from '@/app/lib/api-client';
 import { logout } from '@/app/login/logout';
 
-export default function ChangePasswordForm({ required, homePath }: { required: boolean; homePath: string }) {
+export default function ChangePasswordForm({ required, homePath, minLength }: { required: boolean; homePath: string; minLength: number }) {
     const router = useRouter();
     const [current, setCurrent] = useState('');
     const [next, setNext] = useState('');
@@ -58,7 +58,7 @@ export default function ChangePasswordForm({ required, homePath }: { required: b
                 {(id) => <input id={id} type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} className={inputClass} required />}
             </Field>
             <Field label="New password">
-                {(id) => <input id={id} type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} className={inputClass} required minLength={8} />}
+                {(id) => <input id={id} type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} className={inputClass} required minLength={minLength} />}
             </Field>
             <Field label="Confirm new password" error={mismatch ? 'Does not match the new password.' : null}>
                 {(id) => <input id={id} type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className={inputClass} required />}

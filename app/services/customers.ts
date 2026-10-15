@@ -4,6 +4,7 @@ import { customers, sales } from "../db/schema";
 import { RequestError } from "../lib/api-error";
 import { optionalBoolean, optionalText, requiredText } from "../lib/validation";
 import { changedFields, describeChanges, logActivity, type Actor, type RequestInfo } from "./activity";
+import { postedSale } from "./sales";
 
 export interface Customer {
     customer_id: number;
@@ -51,7 +52,7 @@ export async function listCustomersWithActivity(): Promise<CustomerWithActivity[
             last_purchase: sql<string>`DATE_FORMAT(MAX(${sales.sale_date}), '%Y-%m-%d')`,
         })
             .from(sales)
-            .where(and(eq(sales.status, "posted"), sql`${sales.customer_id} IS NOT NULL`))
+            .where(and(postedSale, sql`${sales.customer_id} IS NOT NULL`))
             .groupBy(sales.customer_id),
     ]);
     const byId = new Map(totals.map((t) => [Number(t.customer_id), t]));

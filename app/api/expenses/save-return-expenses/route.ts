@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
+import { readJson, writeErrorJson } from "@/app/lib/api-error";
 import { actorOf, authorize } from "@/app/lib/auth";
-import { toErrorResponse } from "@/app/lib/api-error";
 import { requestInfo } from "@/app/services/activity";
 import { createReturn } from "@/app/services/returns";
 
@@ -14,15 +14,9 @@ export async function POST(request: Request) {
     const auth = await authorize(request, "returns.manage");
     if (!auth.ok) return auth.response;
     try {
-        const body = await request.json();
-        const { message, ...result } = await createReturn(body ?? {}, actorOf(auth.user), requestInfo(request));
+        const { message, ...result } = await createReturn(await readJson(request), actorOf(auth.user), requestInfo(request));
         return NextResponse.json({ success: true, message, ...result }, { status: 201 });
-    } catch (error: unknown) {
-        console.error("Failed to process return:", error);
-        const { message, status } = toErrorResponse(error);
-        return NextResponse.json(
-            { success: false, message },
-            { status }
-        );
+    } catch (error) {
+        return writeErrorJson(error, "Failed to process return:");
     }
 }

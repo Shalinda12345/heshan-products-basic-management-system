@@ -1,57 +1,19 @@
 import { NextResponse } from "next/server";
-import { db } from "@/app/db";
-import { expenses } from "@/app/db/schema";
-import { and, gte, lte, desc } from "drizzle-orm"; 
-import { toReadErrorResponse } from "@/app/lib/api-error";
+import { readErrorJson } from "@/app/lib/api-error";
 import { authorize } from "@/app/lib/auth";
-import { postedExpense } from "@/app/services/expenses";
+import { periodParams } from "@/app/lib/validation";
+import { postedExpensesBetween } from "@/app/services/expenses";
 
 export const dynamic = "force-dynamic";
 
+// GET /api/expenses/get-weekly-expenses — the posted expenses dated this week (Monday to Sunday), newest first (or a whole month with ?year=&month=)
 export async function GET(request: Request) {
     const auth = await authorize(request, "expenses.view");
     if (!auth.ok) return auth.response;
     try {
-        const { searchParams } = new URL(request.url);
-        const reqYear = searchParams.get("year") ? parseInt(searchParams.get("year")!, 10) : null;
-        const reqMonth = searchParams.get("month") ? parseInt(searchParams.get("month")!, 10) - 1 : null;
-
-        let startOfWeek: Date;
-        let endOfWeek: Date;
-
-        if (reqYear !== null && reqMonth !== null) {
-            startOfWeek = new Date(reqYear, reqMonth, 1, 0, 0, 0, 0);
-            endOfWeek = new Date(reqYear, reqMonth + 1, 0, 23, 59, 59, 999);
-        } else {
-            const now = new Date();
-            startOfWeek = new Date(now);
-            const dayOfWeek = now.getDay();
-            const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-            
-            startOfWeek.setDate(now.getDate() - daysToSubtract);
-            startOfWeek.setHours(0, 0, 0, 0);
-
-            endOfWeek = new Date(startOfWeek);
-            endOfWeek.setDate(startOfWeek.getDate() + 6);
-            endOfWeek.setHours(23, 59, 59, 999); 
-        }
-
-        const weeklyExpenses = await db
-            .select()
-            .from(expenses)
-            .where(
-                and(
-                    gte(expenses.expense_date, startOfWeek),
-                    lte(expenses.expense_date, endOfWeek),
-                    postedExpense
-                )
-            )
-            .orderBy(desc(expenses.expense_date)); 
-
-        return NextResponse.json(weeklyExpenses);
+        const { start, end } = periodParams(new URL(request.url).searchParams, "week");
+        return NextResponse.json(await postedExpensesBetween(start, end));
     } catch (error) {
-        console.error("Failed to fetch weekly expenses: ", error);
-        const { message, status } = toReadErrorResponse(error);
-        return NextResponse.json({ error: message }, { status });
+        return readErrorJson(error, "Failed to fetch weekly expenses:");
     }
 }

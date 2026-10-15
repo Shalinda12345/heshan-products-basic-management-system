@@ -6,7 +6,6 @@ import {
     createSessionToken,
     readSessionToken,
     shouldRenewSession,
-    verifySessionToken,
     type SessionClaims,
 } from "@/app/lib/session";
 
@@ -27,7 +26,6 @@ describe("session tokens", () => {
     it("carries who signed in, their session version and role", async () => {
         const session = await readSessionToken(await createSessionToken(claims));
         expect(session).toMatchObject(claims);
-        expect(await verifySessionToken(await createSessionToken(claims))).toBe(true);
     });
 
     it("carries a pending password change", async () => {
@@ -47,9 +45,9 @@ describe("session tokens", () => {
     });
 
     it("rejects tokens from before user accounts (the old constant cookie and v1 tokens)", async () => {
-        expect(await verifySessionToken("logged_in")).toBe(false);
+        expect(await readSessionToken("logged_in")).toBeNull();
         const v1 = `v1.${Date.now() + 60_000}`;
-        expect(await verifySessionToken(`${v1}.${createHmac("sha256", "vitest-auth-secret").update(v1).digest("base64url")}`)).toBe(false);
+        expect(await readSessionToken(`${v1}.${createHmac("sha256", "vitest-auth-secret").update(v1).digest("base64url")}`)).toBeNull();
     });
 
     it.each([undefined, "", "v2", "v2.abc", "v2.%%%.abc", "v2.e30.abc", "a.b.c.d"])("rejects malformed token %j", async (token) => {

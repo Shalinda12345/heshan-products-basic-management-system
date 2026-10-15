@@ -1,18 +1,27 @@
 import { and, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
-import { alias } from "drizzle-orm/mysql-core";
 import { db, type DbExecutor } from "../db";
-import { expenses, returns, users } from "../db/schema";
+import { expenses, returns } from "../db/schema";
 import { RequestError } from "../lib/api-error";
 import { isoDateFromDb, parseLocalDate } from "../lib/dates";
 import { formatMoney } from "../lib/format";
 import { roundMoney } from "../lib/money";
-import { isoDate, positiveNumber, requiredText } from "../lib/validation";
+import { AMOUNT_LIMIT, isoDate, likeContains, positiveNumber, requiredText } from "../lib/validation";
 import { changedFields, describeChanges, logActivity, type Actor, type RequestInfo } from "./activity";
-import { findEmployeeByName } from "./employees";
+import { createdByUser, postedTotals, voidedByUser, voidedColumns, voidReason } from "./documents";
+import { findEmployeeByName, inactiveEmployeeMessage } from "./employees";
 import { findExpenseCategoryByName } from "./expenseCategories";
 
 // Only posted expenses count in totals and reports; voided ones are kept for the record
 export const postedExpense = eq(expenses.status, "posted");
+
+// The posted expenses dated from `start` to `end`, newest first (the weekly and monthly expense pages)
+export function postedExpensesBetween(start: Date, end: Date) {
+    return db
+        .select()
+        .from(expenses)
+        .where(and(gte(expenses.expense_date, start), lte(expenses.expense_date, end), postedExpense))
+        .orderBy(desc(expenses.expense_date));
+}
 
 // The return that created an expense, if any: such expenses are corrected by voiding the return
 async function returnOfExpense(executor: DbExecutor, expenseId: number) {
@@ -66,10 +75,12 @@ export async function updateExpense(actor: Actor, id: number, input: ExpenseUpda
         };
 
         const name = input.expense_name !== undefined ? requiredText(input.expense_name, "Category") : before.expense_name;
+        const sameCategory = name === before.expense_name;
         const category = await findExpenseCategoryByName(tx, name);
-        if (!category) throw new RequestError(`"${name}" is not an expense category.`);
-        if (category.kind === "return") throw new RequestError("An expense can't be turned into a return.");
-        if (!category.is_active && category.expense_name !== before.expense_name) {
+        // An entry whose category is no longer on the list can still be corrected, as long as it keeps that category
+        if (!category && !sameCategory) throw new RequestError(`"${name}" is not an expense category.`);
+        if (category && category.kind === "return" && !sameCategory) throw new RequestError("An expense can't be turned into a return.");
+        if (category && !category.is_active && !sameCategory) {
             throw new RequestError(`The expense category "${category.expense_name}" is no longer in use.`);
         }
 
@@ -77,23 +88,28 @@ export async function updateExpense(actor: Actor, id: number, input: ExpenseUpda
         const rate = input.per_expense_amount !== undefined ? positiveNumber(input.per_expense_amount, "Amount") : before.per_expense_amount;
         const date = input.expense_date !== undefined ? isoDate(input.expense_date, "Date") : before.expense_date;
 
-        let employee: string | null = null;
-        if (category.kind === "salary") {
+        // Salary entries name an employee; an entry that keeps its category keeps its employee otherwise
+        let employee: string | null = sameCategory ? before.employee_name : null;
+        if (category?.kind === "salary") {
             const wanted = input.employee_name !== undefined ? String(input.employee_name ?? "").trim() : before.employee_name ?? "";
             if (!wanted) throw new RequestError(`Choose the employee for this ${category.expense_name} entry.`);
             const found = await findEmployeeByName(tx, wanted);
             if (!found) throw new RequestError(`Employee "${wanted}" not found.`);
+            if (!found.is_active && found.employee_name !== before.employee_name) {
+                throw new RequestError(inactiveEmployeeMessage(found.employee_name));
+            }
             employee = found.employee_name;
         }
 
         const after = {
-            expense_name: category.expense_name,
+            expense_name: category?.expense_name ?? before.expense_name,
             employee_name: employee,
             quantity,
             per_expense_amount: rate,
             total: roundMoney(quantity * rate),
             expense_date: date,
         };
+        if (after.total >= AMOUNT_LIMIT) throw new RequestError("The total is too large.");
         const changes = changedFields(before, after);
         if (Object.keys(changes).length === 0) return { expense_item_id: id, changed: false };
 
@@ -113,14 +129,11 @@ export async function updateExpense(actor: Actor, id: number, input: ExpenseUpda
 }
 
 export async function voidExpense(actor: Actor, id: number, reasonInput: unknown, info: RequestInfo) {
-    const reason = requiredText(reasonInput, "A reason for voiding");
-    if (reason.length < 3) throw new RequestError("Please give a short reason for voiding this expense.");
+    const reason = voidReason(reasonInput, "expense");
 
     return db.transaction(async (tx) => {
         const row = await lockExpense(tx, id);
-        await tx.update(expenses)
-            .set({ status: "void", void_reason: reason.slice(0, 255), voided_at: new Date(), voided_by: actor.id })
-            .where(eq(expenses.expense_item_id, id));
+        await tx.update(expenses).set(voidedColumns(actor, reason)).where(eq(expenses.expense_item_id, id));
         await logActivity(tx, actor, {
             action: "expense.void",
             summary: `Voided expense #${id} (${row.expense_name}${row.employee_name ? ` for ${row.employee_name}` : ""}, ${formatMoney(Number(row.total))} on ${isoDateFromDb(row.expense_date)}): ${reason}`,
@@ -150,9 +163,6 @@ export interface ExpenseFilters {
     pageSize: number;
 }
 
-const createdByUser = alias(users, "created_by_user");
-const voidedByUser = alias(users, "voided_by_user");
-
 export async function listExpenses(filters: ExpenseFilters) {
     const where: SQL[] = [];
     if (filters.from) where.push(gte(expenses.expense_date, parseLocalDate(filters.from)));
@@ -163,7 +173,7 @@ export async function listExpenses(filters: ExpenseFilters) {
     const search = filters.search?.trim().replace(/^#/, "");
     if (search) {
         const asId = Number(search);
-        const like = `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+        const like = likeContains(search);
         where.push(Number.isInteger(asId) && asId > 0
             ? eq(expenses.expense_item_id, asId)
             : sql`(${expenses.expense_name} LIKE ${like} OR ${expenses.employee_name} LIKE ${like})`);
@@ -194,11 +204,7 @@ export async function listExpenses(filters: ExpenseFilters) {
             .orderBy(desc(expenses.expense_date), desc(expenses.expense_item_id))
             .limit(filters.pageSize)
             .offset((filters.page - 1) * filters.pageSize),
-        db.select({
-            count: sql<number>`COUNT(*)`,
-            posted_count: sql<number>`COALESCE(SUM(CASE WHEN ${expenses.status} = 'posted' THEN 1 ELSE 0 END), 0)`,
-            posted_total: sql<number>`COALESCE(SUM(CASE WHEN ${expenses.status} = 'posted' THEN ${expenses.total} ELSE 0 END), 0)`,
-        }).from(expenses).where(condition),
+        db.select(postedTotals(postedExpense, expenses.total)).from(expenses).where(condition),
     ]);
 
     return {

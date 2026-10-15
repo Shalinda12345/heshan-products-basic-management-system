@@ -25,7 +25,7 @@ export default async function AccountPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                 <div className="lg:col-span-5">
                     <Card title="Change password" description={`At least ${MIN_PASSWORD_LENGTH} characters, with letters and numbers. Other devices you are signed in on will be signed out.`}>
-                        <ChangePasswordForm required={user.mustChangePassword} homePath={homePathFor(user.role)} />
+                        <ChangePasswordForm required={user.mustChangePassword} homePath={homePathFor(user.role)} minLength={MIN_PASSWORD_LENGTH} />
                         {user.mustChangePassword && <SignOutInstead />}
                     </Card>
                 </div>

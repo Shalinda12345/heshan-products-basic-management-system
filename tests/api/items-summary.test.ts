@@ -52,6 +52,20 @@ describe("GET /api/sales/get-items-summary", () => {
         expect(units(body.items)).toEqual([["Ice Cream Tub", 3]]);
     });
 
+    it.each([
+        "timeframe=daily&date=garbage",
+        "timeframe=custom&startDate=2026-10-30&endDate=2026-10-01",
+        "timeframe=monthly&year=2026&month=13",
+        "timeframe=hourly",
+    ])("refuses %s with 400", async (search) => {
+        expect((await summary(search)).status).toBe(400);
+    });
+
+    it("describes the period the same way whatever the server's language", async () => {
+        expect((await summary("timeframe=weekly")).body.dateRange.label).toBe("12 Oct – 18 Oct 2026");
+        expect((await summary("timeframe=daily&date=2026-10-12")).body.dateRange.label).toBe("12 Oct 2026");
+    });
+
     it("excludes sales just outside the month", async () => {
         const { body } = await summary("timeframe=monthly&year=2026&month=11");
         expect(units(body.items)).toEqual([["Yogurt", 2]]);

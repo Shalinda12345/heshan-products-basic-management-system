@@ -65,6 +65,10 @@ function asDate(value: string | Date): Date {
 
 // Month abbreviations spelled out here: locale data differs between Node and browsers ("Sep" vs "Sept")
 export const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const MONTH_NAMES = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+];
 
 // "13 Oct 2026"
 export function formatDate(value: string | Date | null | undefined): string {

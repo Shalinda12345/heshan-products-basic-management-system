@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { BACKGROUND_REQUEST_HEADER } from './session';
+import { BACKGROUND_REQUEST_HEADER } from './background-request';
 
 // fetch() for automatic refreshes: no caching, and flagged so the proxy doesn't count it as user activity
 export function backgroundFetch(url: string, init: RequestInit = {}): Promise<Response> {

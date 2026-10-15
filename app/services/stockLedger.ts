@@ -1,10 +1,9 @@
+import { eq, sql } from "drizzle-orm";
 import type { DbTransaction } from "../db";
 import { stocks, stock_movements } from "../db/schema";
-import { eq, sql } from "drizzle-orm";
-import { MOVEMENT_TYPES, type MovementType } from "../lib/stock";
+import { RequestError } from "../lib/api-error";
 import { roundMoney } from "../lib/money";
-
-export type { DbTransaction };
+import { MOVEMENT_TYPES, type MovementType } from "../lib/stock";
 
 interface StockMovementInput {
     productId: number;
@@ -45,10 +44,10 @@ export async function applyStockMovement(tx: DbTransaction, input: StockMovement
 
     if (direction === "OUT") {
         const current = await lockStockRow();
-        if (!current) throw new Error(noStockRow);
+        if (!current) throw new RequestError(noStockRow);
         const available = Number(current.quantity);
         if (available < quantity) {
-            throw new Error(
+            throw new RequestError(
                 input.messages?.insufficient?.(available) ??
                 `Insufficient stock for "${productName}". Available: ${available}, Requested: ${quantity}`
             );
@@ -59,7 +58,7 @@ export async function applyStockMovement(tx: DbTransaction, input: StockMovement
     } else {
         // Lock-reading a missing row would take a gap lock that deadlocks concurrent first inserts,
         // so only check up front when the row has to exist anyway
-        if (input.requireStockRow && !(await lockStockRow())) throw new Error(noStockRow);
+        if (input.requireStockRow && !(await lockStockRow())) throw new RequestError(noStockRow);
         // Insert the first stock row or atomically add to the existing one (product_id is unique)
         await tx.insert(stocks)
             .values({ product_id: productId, quantity })

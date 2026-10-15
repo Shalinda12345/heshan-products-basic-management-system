@@ -2,20 +2,31 @@ import { NextResponse } from "next/server";
 import { db } from "@/app/db";
 import { products, sales, sale_items } from "@/app/db/schema";
 import { and, gte, lte, eq, sql, desc } from "drizzle-orm";
-import { toReadErrorResponse } from "@/app/lib/api-error";
+import { RequestError, readErrorJson } from "@/app/lib/api-error";
 import { authorize } from "@/app/lib/auth";
+import { endOfDay, parseLocalDate, startOfDay, toIsoDate } from "@/app/lib/dates";
+import { MONTH_NAMES, formatDate } from "@/app/lib/format";
+import { describeRange, weekContaining } from "@/app/lib/periods";
+import { dateParam, yearMonthParams } from "@/app/lib/validation";
+import { productKey } from "@/app/services/reports";
 import { postedSale } from "@/app/services/sales";
 
 export const dynamic = "force-dynamic";
 
-function parseLocalDate(dateStr: string): Date {
-    const parts = dateStr.split("T")[0].split("-");
-    if (parts.length === 3) {
-        return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-    }
-    return new Date(dateStr);
+const TIMEFRAMES = ["daily", "day", "weekly", "week", "monthly", "month", "custom"];
+
+// "12 Oct – 18 Oct 2026" (written the same way whatever the server's locale)
+const rangeLabel = (start: Date, end: Date) => describeRange({ from: toIsoDate(start), to: toIsoDate(end) });
+
+// A whole month (0-11), from local midnight on the 1st to the end of its last day
+function monthRange(year: number, month: number) {
+    const start = new Date(year, month, 1);
+    return { start, end: endOfDay(new Date(year, month + 1, 0)), label: `${MONTH_NAMES[start.getMonth()]} ${start.getFullYear()}` };
 }
 
+// The dates a timeframe covers, as local times for comparing with DATE columns, and how to describe them.
+// A day or week is the one containing ?date= (or the 1st of ?year=&month=, or today); a custom timeframe is
+// ?startDate= to ?endDate=, else the month in ?year=&month=, else this month.
 function getDateRange(
     timeframe: string,
     params: {
@@ -27,105 +38,31 @@ function getDateRange(
     }
 ): { start: Date; end: Date; label: string } {
     const now = new Date();
+    const base = params.date
+        ? parseLocalDate(params.date)
+        : params.year && params.month ? new Date(params.year, params.month - 1, 1) : now;
 
     if (timeframe === "daily" || timeframe === "day") {
-        let baseDate: Date;
-        if (params.date) {
-            baseDate = parseLocalDate(params.date);
-        } else if (params.year && params.month) {
-            baseDate = new Date(params.year, params.month - 1, 1);
-        } else {
-            baseDate = new Date(now);
-        }
-
-        const start = new Date(baseDate);
-        start.setHours(0, 0, 0, 0);
-
-        const end = new Date(baseDate);
-        end.setHours(23, 59, 59, 999);
-
-        return {
-            start,
-            end,
-            label: start.toLocaleDateString(undefined, { dateStyle: "long" }),
-        };
+        const start = startOfDay(base);
+        return { start, end: endOfDay(base), label: formatDate(start) };
     }
 
     if (timeframe === "weekly" || timeframe === "week") {
-        let baseDate = new Date(now);
-        if (params.date) {
-            baseDate = parseLocalDate(params.date);
-        } else if (params.year && params.month) {
-            baseDate = new Date(params.year, params.month - 1, 1);
-        }
-
-        const dayOfWeek = baseDate.getDay();
-        const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-
-        const start = new Date(baseDate);
-        start.setDate(baseDate.getDate() - daysToSubtract);
-        start.setHours(0, 0, 0, 0);
-
-        const end = new Date(start);
-        end.setDate(start.getDate() + 6);
-        end.setHours(23, 59, 59, 999);
-
-        return {
-            start,
-            end,
-            label: `${start.toLocaleDateString(undefined, { dateStyle: "medium" })} – ${end.toLocaleDateString(undefined, { dateStyle: "medium" })}`,
-        };
+        const { start, end } = weekContaining(base);
+        return { start, end: endOfDay(end), label: rangeLabel(start, end) };
     }
 
     if (timeframe === "monthly" || timeframe === "month") {
-        const year = params.year ?? now.getFullYear();
-        const month = params.month ? params.month - 1 : now.getMonth();
-
-        const start = new Date(year, month, 1, 0, 0, 0, 0);
-        const end = new Date(year, month + 1, 0, 23, 59, 59, 999);
-
-        const monthName = start.toLocaleString("default", { month: "long" });
-        return {
-            start,
-            end,
-            label: `${monthName} ${year}`,
-        };
+        return monthRange(params.year ?? now.getFullYear(), params.month ? params.month - 1 : now.getMonth());
     }
 
-    // Custom
     if (params.startDate && params.endDate) {
-        const start = parseLocalDate(params.startDate);
-        start.setHours(0, 0, 0, 0);
-
-        const end = parseLocalDate(params.endDate);
-        end.setHours(23, 59, 59, 999);
-
-        return {
-            start,
-            end,
-            label: `${start.toLocaleDateString(undefined, { dateStyle: "medium" })} – ${end.toLocaleDateString(undefined, { dateStyle: "medium" })}`,
-        };
+        const start = startOfDay(parseLocalDate(params.startDate));
+        const end = endOfDay(parseLocalDate(params.endDate));
+        return { start, end, label: rangeLabel(start, end) };
     }
-
-    if (params.year && params.month) {
-        const start = new Date(params.year, params.month - 1, 1, 0, 0, 0, 0);
-        const end = new Date(params.year, params.month, 0, 23, 59, 59, 999);
-        const monthName = start.toLocaleString("default", { month: "long" });
-        return {
-            start,
-            end,
-            label: `${monthName} ${params.year}`,
-        };
-    }
-
-    // Fallback: current month
-    const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    return {
-        start,
-        end,
-        label: `${start.toLocaleString("default", { month: "long" })} ${now.getFullYear()}`,
-    };
+    if (params.year && params.month) return monthRange(params.year, params.month - 1);
+    return monthRange(now.getFullYear(), now.getMonth());
 }
 
 export async function GET(request: Request) {
@@ -134,11 +71,12 @@ export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const timeframe = (searchParams.get("timeframe") || searchParams.get("period") || "daily").toLowerCase();
-        const year = searchParams.get("year") ? parseInt(searchParams.get("year")!, 10) : null;
-        const month = searchParams.get("month") ? parseInt(searchParams.get("month")!, 10) : null;
-        const startDate = searchParams.get("startDate");
-        const endDate = searchParams.get("endDate");
-        const date = searchParams.get("date");
+        if (!TIMEFRAMES.includes(timeframe)) throw new RequestError("Invalid parameter: timeframe must be daily, weekly, monthly or custom");
+        const { year, month } = yearMonthParams(searchParams);
+        const startDate = dateParam(searchParams, "startDate");
+        const endDate = dateParam(searchParams, "endDate");
+        const date = dateParam(searchParams, "date");
+        if (startDate && endDate && startDate > endDate) throw new RequestError("Invalid parameters: startDate must not be after endDate");
 
         const { start, end, label } = getDateRange(timeframe, {
             year,
@@ -148,9 +86,7 @@ export async function GET(request: Request) {
             date,
         });
 
-        // Query aggregated items sold within date range. Lines are grouped by product, so a product that was
-        // renamed keeps one row (under its current name); lines from before products were linked group by name.
-        const productKey = sql`COALESCE(CONCAT('id:', ${sale_items.product_id}), CONCAT('name:', ${sale_items.product_name}))`;
+        // Units and revenue per product in the period. A renamed product keeps one row (under its current name).
         const rawItems = await db
             .select({
                 product_name: sql<string>`MAX(COALESCE(${products.product_name}, ${sale_items.product_name}))`,
@@ -174,42 +110,25 @@ export async function GET(request: Request) {
             .groupBy(productKey)
             .orderBy(desc(sql`SUM(${sale_items.quantity})`));
 
-        // Format numbers cleanly
-        let totalUnitsSold = 0;
-        let totalRevenue = 0;
-
-        const formattedItems = rawItems.map((item) => {
-            const quantity = Number(item.total_quantity) || 0;
-            const revenue = Number(item.total_revenue) || 0;
-            const orders = Number(item.orders_count) || 0;
-            const avgPrice = Number(item.avg_price) || 0;
-            const minPrice = Number(item.min_price) || 0;
-            const maxPrice = Number(item.max_price) || 0;
-
-            totalUnitsSold += quantity;
-            totalRevenue += revenue;
-
-            return {
-                product_name: item.product_name,
-                quantity,
-                revenue,
-                orders_count: orders,
-                avg_price: avgPrice,
-                min_price: minPrice,
-                max_price: maxPrice,
-                percentage_of_units: 0,
-                percentage_of_revenue: 0,
-            };
-        });
-
-        // Compute percentages
-        const itemsWithPercentages = formattedItems.map((item) => ({
+        const items = rawItems.map((item) => ({
+            product_name: item.product_name,
+            quantity: Number(item.total_quantity) || 0,
+            revenue: Number(item.total_revenue) || 0,
+            orders_count: Number(item.orders_count) || 0,
+            avg_price: Number(item.avg_price) || 0,
+            min_price: Number(item.min_price) || 0,
+            max_price: Number(item.max_price) || 0,
+        }));
+        const totalUnitsSold = items.reduce((sum, item) => sum + item.quantity, 0);
+        const totalRevenue = items.reduce((sum, item) => sum + item.revenue, 0);
+        const share = (part: number, whole: number) => (whole > 0 ? parseFloat(((part / whole) * 100).toFixed(1)) : 0);
+        const itemsWithPercentages = items.map((item) => ({
             ...item,
-            percentage_of_units: totalUnitsSold > 0 ? parseFloat(((item.quantity / totalUnitsSold) * 100).toFixed(1)) : 0,
-            percentage_of_revenue: totalRevenue > 0 ? parseFloat(((item.revenue / totalRevenue) * 100).toFixed(1)) : 0,
+            percentage_of_units: share(item.quantity, totalUnitsSold),
+            percentage_of_revenue: share(item.revenue, totalRevenue),
         }));
 
-        const topProduct = itemsWithPercentages.length > 0 ? itemsWithPercentages[0] : null;
+        const topProduct = itemsWithPercentages[0] ?? null;
 
         return NextResponse.json({
             success: true,
@@ -232,15 +151,8 @@ export async function GET(request: Request) {
                     : null,
             },
             items: itemsWithPercentages,
-        }, {
-            headers: {
-                "Cache-Control": "no-store, no-cache, must-revalidate",
-                Pragma: "no-cache",
-            },
-        });
+        }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
-        console.error("Failed to fetch items sold summary:", error);
-        const { message, status } = toReadErrorResponse(error);
-        return NextResponse.json({ error: message }, { status });
+        return readErrorJson(error, "Failed to fetch items sold summary:");
     }
 }

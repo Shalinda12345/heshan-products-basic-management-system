@@ -5,9 +5,10 @@ import { customers, expenses, products, returns, sales, sale_items, stocks } fro
 import { parseLocalDate, toIsoDate } from "../lib/dates";
 import { MONTH_ABBR } from "../lib/format";
 import { roundMoney } from "../lib/money";
-import { describeRange, previousPeriod, type DateRange } from "../lib/periods";
+import { addDays, daysBetween, describeRange, previousPeriod, type DateRange } from "../lib/periods";
 import { lowStockLevel, stockStatus } from "../lib/stock";
 import { postedExpense } from "./expenses";
+import { postedReturn } from "./returns";
 import { postedSale } from "./sales";
 
 // Expenses created by returns are named after the product ("Stock Expense Return: Yogurt"); report them as one category
@@ -33,16 +34,19 @@ function foldCategories<T extends { name: string }>(rows: T[], numeric: (keyof T
 }
 
 // Invoice lines group by product; lines from before products were linked group by their name
-const productKey = sql<string>`COALESCE(CONCAT('id:', ${sale_items.product_id}), CONCAT('name:', ${sale_items.product_name}))`;
+export const productKey = sql<string>`COALESCE(CONCAT('id:', ${sale_items.product_id}), CONCAT('name:', ${sale_items.product_name}))`;
 const customerKey = sql<string>`COALESCE(CONCAT('id:', ${sales.customer_id}), CONCAT('name:', ${sales.customer_name}))`;
 
 function between(column: typeof sales.sale_date | typeof expenses.expense_date | typeof returns.return_date, range: DateRange) {
     return and(gte(column, parseLocalDate(range.from)), lte(column, parseLocalDate(range.to)));
 }
 
+// `part` as a percentage of `whole`, to one decimal place
+const percentOf = (part: number, whole: number) => Math.round((part / whole) * 1000) / 10;
+
+// Percentage change from `previous` (null when there is nothing to compare with)
 function change(current: number, previous: number): number | null {
-    if (!previous) return null;
-    return Math.round(((current - previous) / Math.abs(previous)) * 1000) / 10;
+    return previous ? percentOf(current - previous, Math.abs(previous)) : null;
 }
 
 const money = (value: unknown) => roundMoney(Number(value ?? 0));
@@ -84,9 +88,11 @@ async function periodTotals(range: DateRange) {
         db.select({ units: sql<number>`COALESCE(SUM(${sale_items.quantity}), 0)` })
             .from(sale_items).innerJoin(sales, eq(sales.sale_id, sale_items.sale_id))
             .where(and(between(sales.sale_date, range), postedSale)),
+        // Returns taken off invoices that still count (a voided invoice is out of every total, returns and all)
         db.select({ value: sql<number>`COALESCE(SUM(${returns.total}), 0)`, count: sql<number>`COUNT(*)` })
             .from(returns)
-            .where(and(between(returns.return_date, range), eq(returns.status, "posted"),
+            .innerJoin(sales, eq(sales.sale_id, returns.sale_id))
+            .where(and(between(returns.return_date, range), postedReturn, postedSale,
                 inArray(returns.return_type, ["sale_reduction_return", "sale_reduction_expense_return"]))),
     ]);
     const revenue = money(sale.revenue);
@@ -97,7 +103,7 @@ async function periodTotals(range: DateRange) {
         revenue,
         expenses: totalExpenses,
         profit,
-        margin: revenue > 0 ? Math.round((profit / revenue) * 1000) / 10 : null,
+        margin: revenue > 0 ? percentOf(profit, revenue) : null,
         invoices,
         avg_invoice: invoices > 0 ? roundMoney(revenue / invoices) : 0,
         customers: Number(sale.customers),
@@ -227,14 +233,14 @@ export async function productsReport(range: DateRange) {
             revenue,
             invoices: Number(cur?.invoices ?? 0),
             avg_price: units > 0 ? roundMoney(revenue / units) : null,
-            share: totalRevenue > 0 ? Math.round((revenue / totalRevenue) * 1000) / 10 : 0,
+            share: totalRevenue > 0 ? percentOf(revenue, totalRevenue) : 0,
             prev_units: Number(prev?.units ?? 0),
             prev_revenue: prevRevenue,
             change: change(revenue, prevRevenue),
             unit_cost: unitCost,
             est_cost: estCost,
             est_profit: estProfit,
-            est_margin: estProfit !== null && revenue > 0 ? Math.round((estProfit / revenue) * 1000) / 10 : null,
+            est_margin: estProfit !== null && revenue > 0 ? percentOf(estProfit, revenue) : null,
             on_hand: product?.on_hand ?? null,
         };
     }).sort((a, b) => b.revenue - a.revenue || b.prev_revenue - a.prev_revenue || a.product_name.localeCompare(b.product_name));
@@ -249,7 +255,7 @@ export async function productsReport(range: DateRange) {
             prev_revenue: roundMoney(rows.reduce((sum, r) => sum + r.prev_revenue, 0)),
             est_profit: costed.length ? roundMoney(costed.reduce((sum, r) => sum + (r.est_profit ?? 0), 0)) : null,
             // Share of revenue from products with a unit cost, i.e. how much of the margin estimate is covered
-            cost_coverage: totalRevenue > 0 ? Math.round((costed.reduce((sum, r) => sum + r.revenue, 0) / totalRevenue) * 1000) / 10 : null,
+            cost_coverage: totalRevenue > 0 ? percentOf(costed.reduce((sum, r) => sum + r.revenue, 0), totalRevenue) : null,
             not_selling: rows.filter((r) => r.is_active && r.units === 0).length,
         },
     };
@@ -292,8 +298,7 @@ export async function customersReport(range: DateRange, today = new Date()) {
     const totalRevenue = current.reduce((sum, r) => sum + Number(r.revenue), 0);
     const todayIso = toIsoDate(today);
     // Negative for an invoice dated in the future (usually a typing mistake worth checking)
-    const daysSince = (date: string | null | undefined) =>
-        date ? Math.round((parseLocalDate(todayIso).getTime() - parseLocalDate(date).getTime()) / 86_400_000) : null;
+    const daysSince = (date: string | null | undefined) => (date ? daysBetween(parseLocalDate(date), parseLocalDate(todayIso)) : null);
 
     const rows = [...keys].map((key) => {
         const cur = curByKey.get(key);
@@ -310,7 +315,7 @@ export async function customersReport(range: DateRange, today = new Date()) {
             revenue,
             invoices,
             avg_invoice: invoices > 0 ? roundMoney(revenue / invoices) : null,
-            share: totalRevenue > 0 ? Math.round((revenue / totalRevenue) * 1000) / 10 : 0,
+            share: totalRevenue > 0 ? percentOf(revenue, totalRevenue) : 0,
             prev_revenue: prevRevenue,
             change: change(revenue, prevRevenue),
             first_purchase: history?.first_purchase ?? null,
@@ -333,7 +338,7 @@ export async function customersReport(range: DateRange, today = new Date()) {
             new_customers: rows.filter((r) => r.is_new).length,
             // Bought in the previous period but not in this one
             lapsed_customers: rows.filter((r) => r.prev_revenue > 0 && r.revenue === 0).length,
-            top5_share: totalRevenue > 0 ? Math.round((top5 / totalRevenue) * 1000) / 10 : null,
+            top5_share: totalRevenue > 0 ? percentOf(top5, totalRevenue) : null,
             // How much depends on the single biggest customer
             top_customer: buying[0] ? { name: buying[0].customer_name, share: buying[0].share } : null,
         },
@@ -392,7 +397,7 @@ export async function expensesReport(range: DateRange) {
                 name: r.name,
                 total: money(r.current),
                 count: Number(r.count),
-                share: total > 0 ? Math.round((Number(r.current) / total) * 1000) / 10 : 0,
+                share: total > 0 ? percentOf(Number(r.current), total) : 0,
                 prev_total: money(r.previous),
                 change: change(money(r.current), money(r.previous)),
             }))
@@ -411,8 +416,7 @@ export const DEAD_STOCK_DAYS = 60;
 
 export async function stockReport(today = new Date()) {
     const end = toIsoDate(today);
-    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (STOCK_WINDOW_DAYS - 1));
-    const window = { from: toIsoDate(start), to: end };
+    const window = { from: toIsoDate(addDays(today, -(STOCK_WINDOW_DAYS - 1))), to: end };
 
     const [catalogue, recent, lastSales] = await Promise.all([
         db.select({
@@ -448,7 +452,7 @@ export async function stockReport(today = new Date()) {
             const sold = soldById.get(id) ?? 0;
             const perDay = sold / STOCK_WINDOW_DAYS;
             const lastSale = lastById.get(id) ?? null;
-            const idleDays = lastSale ? Math.round((todayDate.getTime() - parseLocalDate(lastSale).getTime()) / 86_400_000) : null;
+            const idleDays = lastSale ? daysBetween(parseLocalDate(lastSale), todayDate) : null;
             return {
                 product_id: id,
                 product_name: p.product_name,
