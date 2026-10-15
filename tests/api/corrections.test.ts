@@ -149,6 +149,26 @@ describe("correcting and voiding expenses", () => {
         expect(body.message).toBe("Choose the employee for this Salary entry.");
     });
 
+    it("corrects an entry whose category is no longer on the list, keeping its quantity", async () => {
+        await query("INSERT INTO expenses (expense_name, quantity, per_expense_amount, total, expense_date) VALUES ('Old Gas', 3, 100, 300, '2026-10-05')");
+        const id = (await query<{ id: number }>("SELECT MAX(expense_item_id) AS id FROM expenses"))[0].id;
+        const { status } = await patch(updateExpense, `/api/expenses/${id}`, { expense_name: "Old Gas", quantity: 3, per_expense_amount: 110 }, { params: { id: String(id) } });
+        expect(status).toBe(200);
+        expect(await expenseRow(id)).toMatchObject({ expense_name: "Old Gas", quantity: 3, total: 330 });
+        // It still can't be moved to a name that isn't a category
+        expect((await patch(updateExpense, `/api/expenses/${id}`, { expense_name: "Made Up" }, { params: { id: String(id) } })).status).toBe(400);
+    });
+
+    it("won't move a salary entry to an inactive employee, but can still correct one already paid to them", async () => {
+        const paid = await post(saveExpense, "/api/expenses/save-expenses", { expense_name: "Salary", employee_name: "Ruwan Perera", per_expense_amount: 100, expense_date: "2026-10-13" });
+        const id = paid.body.expense_item_id;
+        await query("UPDATE employees SET is_active = 0");
+        expect((await patch(updateExpense, `/api/expenses/${id}`, { per_expense_amount: 120 }, { params: { id: String(id) } })).status).toBe(200);
+        const { status, body } = await patch(updateExpense, `/api/expenses/${id}`, { employee_name: "Sanduni Silva" }, { params: { id: String(id) } });
+        expect(status).toBe(400);
+        expect(body.message).toBe("Sanduni Silva is inactive. Reactivate them on the Employees page before recording a payment.");
+    });
+
     it("voids an expense, which leaves the totals but stays on file", async () => {
         const { status } = await post(voidExpense, "/api/expenses/2/void", { reason: "Paid by the customer" }, { params: { id: "2" } });
         expect(status).toBe(200);

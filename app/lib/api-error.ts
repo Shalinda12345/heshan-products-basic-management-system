@@ -68,7 +68,7 @@ function driverErrorCode(error: unknown): string | undefined {
 }
 
 // An unreachable or out-of-date database won't be fixed by trying again, so it gets its own message
-function databaseProblem(error: unknown): ErrorResponse | null {
+export function databaseProblem(error: unknown): ErrorResponse | null {
     const code = driverErrorCode(error);
     if (code && CONNECTION_ERROR_CODES.has(code)) return { message: DATABASE_UNAVAILABLE_MESSAGE, status: 503 };
     if (code && SCHEMA_ERROR_CODES.has(code)) return { message: DATABASE_OUTDATED_MESSAGE, status: 500 };

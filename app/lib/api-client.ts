@@ -13,6 +13,11 @@ export class ApiError extends Error {
 
 const NETWORK_MESSAGE = 'Could not reach the server. Check the connection and try again.';
 
+// True when a request never reached the server, as opposed to the server refusing it
+export function isNetworkError(error: unknown): boolean {
+    return error instanceof ApiError && error.status === 0;
+}
+
 async function parse<T>(response: Response, fallback: string): Promise<T> {
     if (!response.ok) throw new ApiError(await responseErrorMessage(response, fallback), response.status);
     return (await response.json()) as T;
@@ -45,6 +50,17 @@ export async function apiSend<T = { success: boolean; message?: string }>(url: s
         throw new ApiError(NETWORK_MESSAGE, 0);
     }
     return parse<T>(response, 'The change could not be saved. Please try again.');
+}
+
+// Every row of a paged list such as /api/sales/invoices (up to 10,000), for exports
+export async function fetchAllPages<T>(path: string, params: object): Promise<T[]> {
+    const all: T[] = [];
+    for (let page = 1; page <= 50; page++) {
+        const result = await apiGet<{ rows: T[]; total: number }>(`${path}${queryString({ ...params, page, page_size: 200 })}`);
+        all.push(...result.rows);
+        if (all.length >= result.total || result.rows.length === 0) break;
+    }
+    return all;
 }
 
 export function errorMessage(error: unknown): string {

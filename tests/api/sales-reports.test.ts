@@ -53,6 +53,17 @@ describe("GET /api/sales/get-monthly-sales", () => {
     });
 });
 
+describe("period parameters", () => {
+    it.each([
+        [weeklySales, "/api/sales/get-weekly-sales?year=abc&month=5"],
+        [monthlySales, "/api/sales/get-monthly-sales?year=2026&month=13"],
+        [monthlySales, "/api/sales/get-monthly-sales?month=0"],
+        [dailySales, "/api/sales/get-daily-sales?year=2026&month=1.5"],
+    ])("refuses an impossible month or year (%#) instead of showing another period", async (handler, path) => {
+        expect((await get(handler, path)).status).toBe(400);
+    });
+});
+
 describe("GET /api/sales/get-sale-items", () => {
     it("returns the lines of one invoice", async () => {
         const { status, body } = await get(saleItems, "/api/sales/get-sale-items?sale_id=1");

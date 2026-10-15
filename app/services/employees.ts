@@ -14,8 +14,6 @@ export interface Employee {
     is_active: boolean;
 }
 
-export const MARITAL_STATUSES = ["Single", "Married", "Other"] as const;
-
 const LABELS: Record<string, string> = {
     employee_name: "name",
     employee_address: "address",
@@ -46,6 +44,11 @@ export async function listEmployees(options: { includeInactive?: boolean } = {})
 export async function findEmployee(executor: DbExecutor, id: number): Promise<Employee | null> {
     const [row] = await executor.select().from(employees).where(eq(employees.employee_id, id));
     return row ? toEmployee(row) : null;
+}
+
+// Inactive employees keep their past salary entries but can't be paid again until they are reactivated
+export function inactiveEmployeeMessage(name: string): string {
+    return `${name} is inactive. Reactivate them on the Employees page before recording a payment.`;
 }
 
 export async function findEmployeeByName(executor: DbExecutor, name: string): Promise<Employee | null> {

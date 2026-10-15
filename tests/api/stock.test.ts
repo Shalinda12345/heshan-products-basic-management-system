@@ -127,6 +127,15 @@ describe("stock ledger", () => {
         expect(await movements()).toEqual([]);
     });
 
+    it("won't receive stock for an inactive product, but still lets it be removed", async () => {
+        await query("UPDATE products SET is_active = 0 WHERE product_id = 1");
+        const refused = await post(POST, "/api/stock", { product_id: 1, quantity: 5 });
+        expect(refused.status).toBe(400);
+        expect(refused.body.error).toBe('"Watalappan" is inactive. Reactivate it on the Products page before receiving stock.');
+        expect((await post(POST, "/api/stock", { product_id: 1, quantity: 5, direction: "OUT", movement_type: "damaged" })).status).toBe(200);
+        expect(await stockOf(1)).toBe(95);
+    });
+
     it("accepts a back-dated movement", async () => {
         await post(POST, "/api/stock", { product_id: 1, quantity: 2, movement_date: "2026-10-01" });
         expect((await movements())[0].movement_date).toBe("2026-10-01");

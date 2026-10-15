@@ -3,14 +3,13 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { usePermissions } from '@/app/components/auth/user-provider';
-import type { Permission } from '@/app/lib/permissions';
+import { canOpenPage } from '@/app/lib/permissions';
 
+// A tab is shown only to users whose role can open its page (the same rules the proxy applies)
 export interface SectionTab {
     href: string;
     label: string;
     icon?: string;
-    // Shown only to users with this permission
-    permission?: Permission;
 }
 
 const ACCENTS = {
@@ -24,8 +23,8 @@ const ACCENTS = {
 // `query` is kept on every tab link (e.g. the report period)
 export default function SectionNav({ tabs, accent = 'blue', label, query }: { tabs: SectionTab[]; accent?: keyof typeof ACCENTS; label: string; query?: string }) {
     const pathname = usePathname();
-    const { can } = usePermissions();
-    const visible = tabs.filter((tab) => !tab.permission || can(tab.permission));
+    const { user } = usePermissions();
+    const visible = tabs.filter((tab) => canOpenPage(user?.role, tab.href));
     if (visible.length <= 1) return null;
 
     return (

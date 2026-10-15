@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { actorOf, authorize } from "@/app/lib/auth";
-import { readErrorJson, readJson, writeErrorJson } from "@/app/lib/api-error";
+import { RequestError, readErrorJson, readJson, writeErrorJson } from "@/app/lib/api-error";
 import { hasPermission } from "@/app/lib/permissions";
+import { FORBIDDEN_MESSAGE } from "@/app/lib/session";
 import { requestInfo } from "@/app/services/activity";
 import { createCustomer, listCustomers, listCustomersWithActivity } from "@/app/services/customers";
 
@@ -16,9 +17,7 @@ export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         if (searchParams.get("with_activity") === "1") {
-            if (!hasPermission(auth.user.role, "masterdata.manage")) {
-                return NextResponse.json({ error: "You do not have permission to do this." }, { status: 403 });
-            }
+            if (!hasPermission(auth.user.role, "masterdata.manage")) throw new RequestError(FORBIDDEN_MESSAGE, 403);
             return NextResponse.json(await listCustomersWithActivity(), { headers: { "Cache-Control": "no-store" } });
         }
         const rows = await listCustomers({ includeInactive: searchParams.get("include_inactive") === "1" });

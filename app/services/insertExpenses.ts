@@ -4,12 +4,13 @@ import { RequestError } from "../lib/api-error";
 import { EXPENSE_KINDS } from "../lib/expense-kinds";
 import { formatMoney, formatQty } from "../lib/format";
 import { roundMoney } from "../lib/money";
-import { parseLocalDate } from "../lib/dates";
+import { isIsoDate, parseLocalDate } from "../lib/dates";
+import { AMOUNT_LIMIT } from "../lib/validation";
 import { logActivity, type Actor, type RequestInfo } from "./activity";
-import { findEmployeeByName } from "./employees";
+import { findEmployeeByName, inactiveEmployeeMessage } from "./employees";
 import { findExpenseCategoryByName } from "./expenseCategories";
 
-interface ExpenseItemInput {
+export interface ExpenseItemInput {
     expense_name: string;
     employee_name?: string; // Employee paid, for salary-type expenses
     quantity: number;
@@ -20,24 +21,34 @@ interface ExpenseItemInput {
 
 export async function InsertExpenses(data: ExpenseItemInput, actor: Actor | null = null, info?: RequestInfo) {
     if (!data) {
-        throw new Error("No expense data provided.");
+        throw new RequestError("No expense data provided.");
     }
-    if (!data.expense_name || !data.expense_name.trim()) {
-        throw new Error("Expense name is required.");
+    if (typeof data.expense_name !== "string" || !data.expense_name.trim()) {
+        throw new RequestError("Expense name is required.");
     }
     if (!data.expense_date) {
-        throw new Error("Expense date is required.");
+        throw new RequestError("Expense date is required.");
     }
-    if (data.per_expense_amount === undefined || !Number.isFinite(Number(data.per_expense_amount)) || Number(data.per_expense_amount) < 0) {
-        throw new Error("Per-expense amount cannot be negative.");
+    if (!isIsoDate(data.expense_date)) {
+        throw new RequestError("Expense date must be a valid date (YYYY-MM-DD).");
+    }
+    const perAmount = Number(data.per_expense_amount);
+    if (data.per_expense_amount === undefined || !Number.isFinite(perAmount) || perAmount < 0) {
+        throw new RequestError("Per-expense amount cannot be negative.");
+    }
+    if (perAmount === 0) {
+        throw new RequestError("Per-expense amount must be greater than 0.");
     }
 
     const qty = data.quantity ? Number(data.quantity) : 1;
     if (!Number.isFinite(qty) || qty <= 0) {
-        throw new Error("Quantity must be greater than 0.");
+        throw new RequestError("Quantity must be greater than 0.");
     }
-    const perAmount = Number(data.per_expense_amount);
     const calculatedTotal = roundMoney(qty * perAmount);
+    // The amount columns hold values below AMOUNT_LIMIT
+    if (qty >= AMOUNT_LIMIT || perAmount >= AMOUNT_LIMIT || calculatedTotal >= AMOUNT_LIMIT) {
+        throw new RequestError("The quantity or amount is too large.");
+    }
     const parsedDate = parseLocalDate(data.expense_date);
     const employeeInput = String(data.employee_name ?? "").trim();
 
@@ -60,11 +71,11 @@ export async function InsertExpenses(data: ExpenseItemInput, actor: Actor | null
             if (!employeeInput) throw new RequestError(`Choose the employee for this ${category.expense_name} entry.`);
             const employee = await findEmployeeByName(tx, employeeInput);
             if (!employee) throw new RequestError(`Employee "${employeeInput}" not found.`);
+            if (!employee.is_active) throw new RequestError(inactiveEmployeeMessage(employee.employee_name));
             employeeName = employee.employee_name;
         }
 
-        // 1. Insert into the main 'expenses' table
-        const [Expense_result] = await tx.insert(expenses).values({
+        const [result] = await tx.insert(expenses).values({
             expense_name: category.expense_name,
             employee_name: employeeName,
             quantity: qty,
@@ -74,7 +85,7 @@ export async function InsertExpenses(data: ExpenseItemInput, actor: Actor | null
             created_by: actor?.id ?? null,
         });
 
-        const newExpenseId = Expense_result.insertId;
+        const newExpenseId = result.insertId;
 
         await logActivity(tx, actor, {
             action: "expense.create",

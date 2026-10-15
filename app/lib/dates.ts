@@ -16,6 +16,15 @@ export function isIsoDate(value: unknown): value is string {
     return toIsoDate(date) === value;
 }
 
+// Local midnight at the start of `date`'s day, and the last millisecond of that day
+export function startOfDay(date = new Date()): Date {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+export function endOfDay(date = new Date()): Date {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+}
+
 export function toIsoDate(date: Date): string {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;

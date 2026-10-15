@@ -1,11 +1,17 @@
 'use client';
 
 import ExpensesNavigation from "@/app/components/expenses/expenses-navigation";
-import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert';
+import { useAlert } from '@/app/components/ui/custom-alert';
+import { Notice } from "@/app/components/ui/feedback";
+import { inputClass, labelClass } from "@/app/components/ui/form";
 import { usePermissions } from "@/app/components/auth/user-provider";
-import { responseErrorMessage } from "@/app/lib/fetch-error";
+import { apiGet, apiSend, errorMessage, isNetworkError } from "@/app/lib/api-client";
+import { isoDateFromDb } from "@/app/lib/dates";
 import type { ExpenseKind } from "@/app/lib/expense-kinds";
-import React, { useEffect, useState, FormEvent } from "react";
+import { formatAmount, formatDate, formatMoney } from "@/app/lib/format";
+import { RETURN_TYPES, returnTypeLabel, type ReturnType } from "@/app/lib/returns";
+import { useResource } from "@/app/lib/use-resource";
+import React, { useState, FormEvent } from "react";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -19,14 +25,14 @@ interface Expense {
     expense_date: string;
 }
 
-interface Expense_Item_List {
+interface ExpenseCategory {
     expense_id: number;
     expense_name: string;
     // How the category is entered (set on the Manage → Expense Categories page)
     kind: ExpenseKind;
 }
 
-interface Employees {
+interface Employee {
     employee_id: number;
     employee_name: string;
 }
@@ -55,39 +61,49 @@ interface SaleItem {
     total: number;
 }
 
-type ReturnType =
-    | ""
-    | "stock_expense_return"
-    | "sale_reduction_return"
-    | "sale_reduction_expense_return";
+// What each return type does, as shown under the return type picker
+const RETURN_TYPE_EFFECTS: Record<ReturnType, string> = {
+    stock_expense_return: "📦 Stock will be reduced and an expense entry will be recorded.",
+    sale_reduction_return: "🛒 Sale amount will be reduced and returned goods added back to stock.",
+    sale_reduction_expense_return: "⚠️ Sale amount will be reduced and goods written off as an expense. No stock credit.",
+};
+
+// Badge colour per return type
+const RETURN_TYPE_BADGE: Record<ReturnType, string> = {
+    stock_expense_return: "bg-rose-950/30 border-rose-800/40 text-rose-400",
+    sale_reduction_return: "bg-teal-950/30 border-teal-800/40 text-teal-400",
+    sale_reduction_expense_return: "bg-purple-950/30 border-purple-800/40 text-purple-400",
+};
+
+const RETURN_TYPE_ACCENT: Record<ReturnType, string> = {
+    stock_expense_return: "border-rose-800/60 focus:border-rose-500 focus:ring-rose-900/30",
+    sale_reduction_return: "border-teal-800/60 focus:border-teal-500 focus:ring-teal-900/30",
+    sale_reduction_expense_return: "border-purple-800/60 focus:border-purple-500 focus:ring-purple-900/30",
+};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ExpensesPage() {
     const { can } = usePermissions();
+    const { show: showAlert, alert } = useAlert();
+
     // ── General form state ────────────────────────────────────────────────────
     const [expenseName, setExpenseName] = useState("");
-    const [allExpenseItems, setAllExpenseItems] = useState<Expense_Item_List[]>([]);
-    const [loadingDropdown, setLoadingDropdown] = useState<boolean>(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [quantityPerProduct, setQuantityPerProduct] = useState(0);
     const [amount, setAmount] = useState(0);
     const [expenseDate, setExpenseDate] = useState("");
     const [employeeName, setEmployeeName] = useState("");
-    const [allEmployees, setAllEmployees] = useState<Employees[]>([]);
 
-    // ── Stock-based return state (all 4 types share the stock picker) ─────────
-    const [allStockItems, setAllStockItems] = useState<StockItem[]>([]);
+    // ── Stock expense return state ────────────────────────────────────────────
     const [selectedReturnProductId, setSelectedReturnProductId] = useState("");
     const [returnQuantity, setReturnQuantity] = useState(0);
     const [returnAmount, setReturnAmount] = useState(0);
 
     // ── Return type sub-selector ──────────────────────────────────────────────
-    const [returnType, setReturnType] = useState<ReturnType>("");
+    const [returnType, setReturnType] = useState<ReturnType | "">("");
 
     // ── Sale-reduction return state ───────────────────────────────────────────
-    const [allSales, setAllSales] = useState<Sale[]>([]);
-    const [loadingSales, setLoadingSales] = useState(false);
     const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
     const [selectedSaleItems, setSelectedSaleItems] = useState<SaleItem[]>([]);
     const [loadingSaleItems, setLoadingSaleItems] = useState(false);
@@ -98,26 +114,33 @@ export default function ExpensesPage() {
     // For sale_reduction_return: user also picks a stock item to credit back
     const [creditStockProductId, setCreditStockProductId] = useState("");
 
-    // ── Right-side ledger ─────────────────────────────────────────────────────
-    const [recentExpenses, setRecentExpenses] = useState<Expense[]>([]);
-    const [loadingRecent, setLoadingRecent] = useState<boolean>(true);
-    const [alertState, setAlertState] = useState<{
-        isOpen: boolean;
-        variant: AlertVariant;
-        title: string;
-        message: string;
-    }>({ isOpen: false, variant: 'info', title: '', message: '' });
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-    const showAlert = (variant: AlertVariant, title: string, message: string) => {
-        setAlertState({ isOpen: true, variant, title, message });
-    };
-    const closeAlert = () => setAlertState(prev => ({ ...prev, isOpen: false }));
+    // ── Data ──────────────────────────────────────────────────────────────────
+    const categories = useResource<ExpenseCategory[]>("/api/expenses/get-expense-item-list");
+    const employees = useResource<{ data: Employee[] }>("/api/employees");
+    const recent = useResource<Expense[]>("/api/expenses/get-daily-expenses");
+    const allExpenseItems = categories.data ?? [];
+    const allEmployees = employees.data?.data ?? [];
+    const recentExpenses = recent.data ?? [];
+    const loadError = categories.error ?? employees.error ?? recent.error;
 
     // ── Derived values ────────────────────────────────────────────────────────
-    const selectedReturnProduct = allStockItems.find(
-        (s) => s.product_id === Number(selectedReturnProductId)
-    );
+    const selectedKind = allExpenseItems.find((item) => item.expense_name === expenseName)?.kind;
+    const requiresQuantity = selectedKind === "quantity";
+    const isSalaryType = selectedKind === "salary";
+    const isReturn = selectedKind === "return";
+    const isSaleReturn = returnType === "sale_reduction_return" || returnType === "sale_reduction_expense_return";
+    // Returns change invoices and stock, so only roles that manage returns see that category
+    const expenseOptions = allExpenseItems.filter((item) => item.kind !== "return" || can("returns.manage"));
+    const calculatedTotal = requiresQuantity ? quantityPerProduct * amount : amount;
+
+    // Only the return form needs the stock levels and the invoice list
+    const stock = useResource<StockItem[]>(isReturn ? "/api/stock" : null);
+    const salesList = useResource<Sale[]>(isSaleReturn ? "/api/sales/get-sales-list" : null);
+    const allStockItems = (stock.data ?? []).filter((item) => item.is_active !== false);
+    const allSales = salesList.data ?? [];
+    const returnLoadError = isReturn ? stock.error ?? (isSaleReturn ? salesList.error : null) : null;
+
+    const selectedReturnProduct = allStockItems.find((s) => s.product_id === Number(selectedReturnProductId));
     const returnTotal = returnQuantity * returnAmount;
 
     const selectedSale = allSales.find((s) => s.sale_id === selectedSaleId);
@@ -125,21 +148,12 @@ export default function ExpensesPage() {
     const saleReturnTotal = saleReturnQuantity * saleReturnPrice;
     const saleReturnExpenseTotal = saleReturnQuantity * saleReturnExpensePrice;
 
-    const selectedKind = allExpenseItems.find((item) => item.expense_name === expenseName)?.kind;
-    const requiresQuantity = selectedKind === "quantity";
-    const isSalaryType = selectedKind === "salary";
-    const isReturn = selectedKind === "return";
-    // Returns change invoices and stock, so only roles that manage returns see that category
-    const expenseOptions = allExpenseItems.filter((item) => item.kind !== "return" || can("returns.manage"));
-    const calculatedTotal = requiresQuantity ? quantityPerProduct * amount : amount;
-
-    // ── Reset helper — clears all return-specific fields ─────────────────────
-    const resetReturnFields = () => {
-        setReturnType("");
+    // ── Reset helpers ─────────────────────────────────────────────────────────
+    // Clears what was entered for the chosen return type
+    const clearReturnDetails = () => {
         setSelectedReturnProductId("");
         setReturnQuantity(0);
         setReturnAmount(0);
-        setAllSales([]);
         setSelectedSaleId(null);
         setSelectedSaleItems([]);
         setSelectedSaleItemName("");
@@ -149,31 +163,12 @@ export default function ExpensesPage() {
         setCreditStockProductId("");
     };
 
+    const resetReturnFields = () => {
+        setReturnType("");
+        clearReturnDetails();
+    };
+
     // ─── Data fetching ────────────────────────────────────────────────────────
-
-    const fetchRecentExpenses = async () => {
-        try {
-            const response = await fetch("/api/expenses/get-daily-expenses", { cache: 'no-store' });
-            if (!response.ok) throw new Error("Network response was not ok");
-            const data = await response.json();
-            setRecentExpenses(data);
-        } catch (error) {
-            console.error("Error fetching recent expenses:", error);
-        } finally {
-            setLoadingRecent(false);
-        }
-    };
-
-    const fetchStockItems = async () => {
-        try {
-            const response = await fetch("/api/stock", { cache: "no-store" });
-            if (!response.ok) throw new Error("Failed to fetch stock");
-            const data: StockItem[] = await response.json();
-            setAllStockItems(data.filter((item) => item.is_active !== false));
-        } catch (error) {
-            console.error("Error fetching stock items:", error);
-        }
-    };
 
     const fetchSaleItems = async (saleId: number) => {
         setLoadingSaleItems(true);
@@ -182,10 +177,7 @@ export default function ExpensesPage() {
         setSaleReturnQuantity(0);
         setSaleReturnPrice(0);
         try {
-            const response = await fetch(`/api/sales/get-sale-items?sale_id=${saleId}`, { cache: "no-store" });
-            if (!response.ok) throw new Error("Failed to fetch sale items");
-            const data = await response.json();
-            setSelectedSaleItems(data);
+            setSelectedSaleItems(await apiGet<SaleItem[]>(`/api/sales/get-sale-items?sale_id=${saleId}`));
         } catch (error) {
             console.error("Error fetching sale items:", error);
         } finally {
@@ -193,92 +185,25 @@ export default function ExpensesPage() {
         }
     };
 
-    useEffect(() => {
-        let isMounted = true;
-        const initData = async () => {
-            try {
-                const [expItemsRes, empRes, recExpRes, stockRes] = await Promise.all([
-                    fetch("/api/expenses/get-expense-item-list", { cache: "no-store" }),
-                    fetch("/api/employees", { cache: "no-store" }),
-                    fetch("/api/expenses/get-daily-expenses", { cache: "no-store" }),
-                    fetch("/api/stock", { cache: "no-store" }),
-                ]);
-
-                if (expItemsRes.ok) {
-                    const data = await expItemsRes.json();
-                    if (isMounted) setAllExpenseItems(data);
-                }
-                if (empRes.ok) {
-                    const data = await empRes.json();
-                    if (isMounted) setAllEmployees(data.data || []);
-                }
-                if (recExpRes.ok) {
-                    const data = await recExpRes.json();
-                    if (isMounted) setRecentExpenses(data);
-                }
-                if (stockRes.ok) {
-                    const data: StockItem[] = await stockRes.json();
-                    if (isMounted) setAllStockItems(data.filter((item) => item.is_active !== false));
-                }
-
-                // Say why the lists are empty, rather than leaving a form that can't be filled in
-                const failed = [expItemsRes, empRes, recExpRes, stockRes].find((res) => !res.ok);
-                if (failed) {
-                    const message = await responseErrorMessage(failed, "Some data could not be loaded. Refresh the page to try again.");
-                    if (isMounted) setAlertState({ isOpen: true, variant: 'error', title: 'Could Not Load Data', message });
-                }
-            } catch (err) {
-                console.error("Initialization error:", err);
-                if (isMounted) {
-                    setAlertState({ isOpen: true, variant: 'error', title: 'Network Error', message: 'Could not reach the server. Refresh the page to try again.' });
-                }
-            } finally {
-                if (isMounted) {
-                    setLoadingDropdown(false);
-                    setLoadingRecent(false);
-                }
-            }
-        };
-        initData();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-
-    // When "Return" is chosen and then return type changes to a sale-reduction type, fetch sales
-    useEffect(() => {
-        if (
-            returnType === "sale_reduction_return" ||
-            returnType === "sale_reduction_expense_return"
-        ) {
-            let isCancelled = false;
-            Promise.resolve().then(() => {
-                if (!isCancelled) setLoadingSales(true);
-            });
-            fetch("/api/sales/get-sales-list", { cache: "no-store" })
-                .then((res) => {
-                    if (!res.ok) throw new Error("Failed to fetch sales");
-                    return res.json();
-                })
-                .then((data) => {
-                    if (!isCancelled) {
-                        setAllSales(data);
-                        setLoadingSales(false);
-                    }
-                })
-                .catch((err) => {
-                    console.error("Error fetching sales list:", err);
-                    if (!isCancelled) setLoadingSales(false);
-                });
-
-            return () => {
-                isCancelled = true;
-            };
-        }
-    }, [returnType]);
-
     // ─── Form submission ──────────────────────────────────────────────────────
+
+    // Posts a return. Once it is saved: refreshes the ledger and the lists it changed, clears the form and confirms.
+    const submitReturn = async (body: Record<string, unknown>, successMessage: string) => {
+        setIsSubmitting(true);
+        try {
+            await apiSend("/api/expenses/save-return-expenses", "POST", body);
+            recent.reload();
+            stock.reload();
+            salesList.reload();
+            setExpenseName("");
+            resetReturnFields();
+            showAlert('success', 'Return Processed', successMessage);
+        } catch (error) {
+            showAlert('error', isNetworkError(error) ? 'Network Error' : 'Return Failed', errorMessage(error));
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     const addToExpenseList = async (e: FormEvent) => {
         e.preventDefault();
@@ -290,7 +215,6 @@ export default function ExpensesPage() {
                 return;
             }
 
-            // ── stock_expense_return ──────────────────────────────────────────
             if (returnType === "stock_expense_return") {
                 if (!expenseDate || !selectedReturnProductId || returnQuantity <= 0 || returnAmount <= 0) {
                     showAlert('warning', 'Missing Fields', 'Please fill in all required fields with positive values.');
@@ -300,168 +224,43 @@ export default function ExpensesPage() {
                     showAlert('warning', 'Insufficient Stock', `Cannot return more than current stock (${selectedReturnProduct.quantity} units).`);
                     return;
                 }
-
-                setIsSubmitting(true);
-                setLoadingRecent(true);
-                try {
-                    const res = await fetch("/api/expenses/save-return-expenses", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            return_type: "stock_expense_return",
-                            product_id: Number(selectedReturnProductId),
-                            product_name: selectedReturnProduct?.product_name ?? "",
-                            quantity: returnQuantity,
-                            per_unit_amount: returnAmount,
-                            total: returnTotal,
-                            expense_date: expenseDate,
-                        }),
-                    });
-                    const result = await res.json();
-                    if (res.ok && result.success) {
-                        await fetchRecentExpenses();
-                        await fetchStockItems();
-                        setExpenseName("");
-                        resetReturnFields();
-                        showAlert('success', 'Return Processed', `Stock Expense Return for "${selectedReturnProduct?.product_name}" recorded.`);
-                    } else {
-                        showAlert('error', 'Return Failed', result.message || 'Failed to process the return.');
-                        setLoadingRecent(false);
-                    }
-                } catch {
-                    showAlert('error', 'Network Error', 'A network error occurred. Please try again.');
-                    setLoadingRecent(false);
-                } finally {
-                    setIsSubmitting(false);
-                }
+                await submitReturn({
+                    return_type: returnType,
+                    product_id: Number(selectedReturnProductId),
+                    product_name: selectedReturnProduct?.product_name ?? "",
+                    quantity: returnQuantity,
+                    per_unit_amount: returnAmount,
+                    expense_date: expenseDate,
+                }, `Stock Expense Return for "${selectedReturnProduct?.product_name}" recorded.`);
                 return;
             }
 
-
-            // ── sale_reduction_return ─────────────────────────────────────────
-            if (returnType === "sale_reduction_return") {
-                if (!expenseDate || !selectedSaleId || !selectedSaleItemName || saleReturnQuantity <= 0 || saleReturnPrice <= 0 || !creditStockProductId) {
-                    showAlert('warning', 'Missing Fields', 'Please complete all sale return fields including the stock item to credit.');
-                    return;
-                }
-                if (selectedSaleItem && saleReturnQuantity > Number(selectedSaleItem.quantity)) {
-                    showAlert('warning', 'Quantity Exceeded', `Cannot return more than sold quantity (${selectedSaleItem.quantity} units).`);
-                    return;
-                }
-
-                setIsSubmitting(true);
-                setLoadingRecent(true);
-                try {
-                    // Re-fetch sale items to validate against latest DB state (prevents double-returns)
-                    const freshItemsRes = await fetch(`/api/sales/get-sale-items?sale_id=${selectedSaleId}`, { cache: "no-store" });
-                    if (freshItemsRes.ok) {
-                        const freshItems: SaleItem[] = await freshItemsRes.json();
-                        const freshItem = freshItems.find(i => i.product_name === selectedSaleItemName);
-                        if (freshItem && saleReturnQuantity > Number(freshItem.quantity)) {
-                            showAlert('warning', 'Quantity Exceeded', `Current available quantity is only ${freshItem.quantity} units (may have changed since you loaded the page).`);
-                            setSelectedSaleItems(freshItems);
-                            setIsSubmitting(false);
-                            setLoadingRecent(false);
-                            return;
-                        }
-                    }
-
-                    const res = await fetch("/api/expenses/save-return-expenses", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            return_type: "sale_reduction_return",
-                            sale_id: selectedSaleId,
-                            sale_product_name: selectedSaleItemName,
-                            sale_quantity: saleReturnQuantity,
-                            sale_per_unit_amount: saleReturnPrice,
-                            sale_total: saleReturnTotal,
-                            // Stock item to credit back
-                            product_id: Number(creditStockProductId),
-                            expense_date: expenseDate,
-                        }),
-                    });
-                    const result = await res.json();
-                    if (res.ok && result.success) {
-                        await fetchRecentExpenses();
-                        await fetchStockItems();
-                        setExpenseName("");
-                        resetReturnFields();
-                        showAlert('success', 'Return Processed', `Sale #${selectedSaleId} reduced and stock credited.`);
-                    } else {
-                        showAlert('error', 'Return Failed', result.message || 'Failed to process the return.');
-                        setLoadingRecent(false);
-                    }
-                } catch {
-                    showAlert('error', 'Network Error', 'A network error occurred. Please try again.');
-                    setLoadingRecent(false);
-                } finally {
-                    setIsSubmitting(false);
-                }
+            // Sale-reduction returns: the server checks the line under a lock, so it has the final word on quantities
+            const creditsStock = returnType === "sale_reduction_return";
+            const missing = !expenseDate || !selectedSaleId || !selectedSaleItemName || saleReturnQuantity <= 0 || saleReturnPrice <= 0
+                || (creditsStock ? !creditStockProductId : saleReturnExpensePrice <= 0);
+            if (missing) {
+                showAlert('warning', 'Missing Fields', creditsStock
+                    ? 'Please complete all sale return fields including the stock item to credit.'
+                    : 'Please complete all sale return fields.');
                 return;
             }
-
-            // ── sale_reduction_expense_return ─────────────────────────────────
-            if (returnType === "sale_reduction_expense_return") {
-                if (!expenseDate || !selectedSaleId || !selectedSaleItemName || saleReturnQuantity <= 0 || saleReturnPrice <= 0 || saleReturnExpensePrice <= 0) {
-                    showAlert('warning', 'Missing Fields', 'Please complete all sale return fields.');
-                    return;
-                }
-                if (selectedSaleItem && saleReturnQuantity > Number(selectedSaleItem.quantity)) {
-                    showAlert('warning', 'Quantity Exceeded', `Cannot return more than sold quantity (${selectedSaleItem.quantity} units).`);
-                    return;
-                }
-
-                setIsSubmitting(true);
-                setLoadingRecent(true);
-                try {
-                    // Re-fetch sale items to validate against latest DB state (prevents double-returns)
-                    const freshItemsRes = await fetch(`/api/sales/get-sale-items?sale_id=${selectedSaleId}`, { cache: "no-store" });
-                    if (freshItemsRes.ok) {
-                        const freshItems: SaleItem[] = await freshItemsRes.json();
-                        const freshItem = freshItems.find(i => i.product_name === selectedSaleItemName);
-                        if (freshItem && saleReturnQuantity > Number(freshItem.quantity)) {
-                            showAlert('warning', 'Quantity Exceeded', `Current available quantity is only ${freshItem.quantity} units (may have changed since you loaded the page).`);
-                            setSelectedSaleItems(freshItems);
-                            setIsSubmitting(false);
-                            setLoadingRecent(false);
-                            return;
-                        }
-                    }
-
-                    const res = await fetch("/api/expenses/save-return-expenses", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            return_type: "sale_reduction_expense_return",
-                            sale_id: selectedSaleId,
-                            sale_product_name: selectedSaleItemName,
-                            sale_quantity: saleReturnQuantity,
-                            sale_per_unit_amount: saleReturnPrice,
-                            sale_total: saleReturnTotal,
-                            expense_per_unit_amount: saleReturnExpensePrice,
-                            expense_total: saleReturnExpenseTotal,
-                            expense_date: expenseDate,
-                        }),
-                    });
-                    const result = await res.json();
-                    if (res.ok && result.success) {
-                        await fetchRecentExpenses();
-                        setExpenseName("");
-                        resetReturnFields();
-                        showAlert('success', 'Return Processed', `Sale #${selectedSaleId} reduced and expense recorded.`);
-                    } else {
-                        showAlert('error', 'Return Failed', result.message || 'Failed to process the return.');
-                        setLoadingRecent(false);
-                    }
-                } catch {
-                    showAlert('error', 'Network Error', 'A network error occurred. Please try again.');
-                    setLoadingRecent(false);
-                } finally {
-                    setIsSubmitting(false);
-                }
+            if (selectedSaleItem && saleReturnQuantity > Number(selectedSaleItem.quantity)) {
+                showAlert('warning', 'Quantity Exceeded', `Cannot return more than sold quantity (${selectedSaleItem.quantity} units).`);
                 return;
             }
+            await submitReturn({
+                return_type: returnType,
+                sale_id: selectedSaleId,
+                sale_product_name: selectedSaleItemName,
+                sale_quantity: saleReturnQuantity,
+                sale_per_unit_amount: saleReturnPrice,
+                ...(creditsStock
+                    ? { product_id: Number(creditStockProductId) }
+                    : { expense_per_unit_amount: saleReturnExpensePrice }),
+                expense_date: expenseDate,
+            }, creditsStock ? `Sale #${selectedSaleId} reduced and stock credited.` : `Sale #${selectedSaleId} reduced and expense recorded.`);
+            return;
         }
 
         // ── Normal expense branch ─────────────────────────────────────────────
@@ -475,70 +274,35 @@ export default function ExpensesPage() {
         }
 
         setIsSubmitting(true);
-        setLoadingRecent(true);
-
         try {
-            const response = await fetch("/api/expenses/save-expenses", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    expense_name: expenseName,
-                    employee_name: isSalaryType ? employeeName : undefined,
-                    quantity: requiresQuantity ? quantityPerProduct : 1,
-                    per_expense_amount: amount,
-                    total: calculatedTotal,
-                    expense_date: expenseDate
-                }),
+            // The server works out the total itself
+            await apiSend("/api/expenses/save-expenses", "POST", {
+                expense_name: expenseName,
+                employee_name: isSalaryType ? employeeName : undefined,
+                quantity: requiresQuantity ? quantityPerProduct : 1,
+                per_expense_amount: amount,
+                expense_date: expenseDate,
             });
-
-            const result = await response.json();
-
-            if (response.ok && result.success) {
-                await fetchRecentExpenses();
-                setExpenseName("");
-                setEmployeeName("");
-                setQuantityPerProduct(0);
-                setAmount(0);
-                // Confirm explicitly: entries dated other than today don't show up in Today's ledger
-                showAlert(
-                    'success',
-                    'Expense Saved',
-                    `"${expenseName}"${isSalaryType ? ` for ${employeeName}` : ""} — Rs. ${calculatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} recorded on ${expenseDate}.`
-                );
-            } else {
-                showAlert('error', 'Save Failed', result.message || 'Failed to save data to the database.');
-                setLoadingRecent(false);
-            }
+            recent.reload();
+            setExpenseName("");
+            setEmployeeName("");
+            setQuantityPerProduct(0);
+            setAmount(0);
+            // Confirm explicitly: entries dated other than today don't show up in Today's ledger
+            showAlert(
+                'success',
+                'Expense Saved',
+                `"${expenseName}"${isSalaryType ? ` for ${employeeName}` : ""} — ${formatMoney(calculatedTotal)} recorded on ${expenseDate}.`
+            );
         } catch (error) {
-            console.error("Network connection error saving expense:", error);
-            showAlert('error', 'Network Error', 'A network connection error occurred. Please try again.');
-            setLoadingRecent(false);
+            showAlert('error', isNetworkError(error) ? 'Network Error' : 'Save Failed', errorMessage(error));
         } finally {
             setIsSubmitting(false);
         }
     };
 
     const totalTodayExpenses = recentExpenses.reduce((sum, item) => sum + Number(item.total), 0);
-
-    // ─── Return type label helper ─────────────────────────────────────────────
-    const returnTypeLabel: Record<string, string> = {
-        stock_expense_return: "Stock Expense Return",
-        sale_reduction_return: "Sale Reduction Return",
-        sale_reduction_expense_return: "Sale Reduction Expense Return",
-    };
-
-    // ── Badge color per return type ───────────────────────────────────────────
-    const returnTypeBadgeClass: Record<string, string> = {
-        stock_expense_return: "bg-rose-950/30 border-rose-800/40 text-rose-400",
-        sale_reduction_return: "bg-teal-950/30 border-teal-800/40 text-teal-400",
-        sale_reduction_expense_return: "bg-purple-950/30 border-purple-800/40 text-purple-400",
-    };
-    const returnTypeAccent: Record<string, string> = {
-        stock_expense_return: "border-rose-800/60 focus:border-rose-500 focus:ring-rose-900/30",
-        sale_reduction_return: "border-teal-800/60 focus:border-teal-500 focus:ring-teal-900/30",
-        sale_reduction_expense_return: "border-purple-800/60 focus:border-purple-500 focus:ring-purple-900/30",
-    };
-    const currentAccent = returnType ? returnTypeAccent[returnType] : "border-amber-800/60 focus:border-amber-500 focus:ring-amber-900/30";
+    const currentAccent = returnType ? RETURN_TYPE_ACCENT[returnType] : "border-amber-800/60 focus:border-amber-500 focus:ring-amber-900/30";
 
     // ─────────────────────────────────────────────────────────────────────────
     // RENDER
@@ -546,13 +310,7 @@ export default function ExpensesPage() {
     return (
         <main className="page-wrapper">
             <div className="page-glow" />
-            <CustomAlert
-                isOpen={alertState.isOpen}
-                variant={alertState.variant}
-                title={alertState.title}
-                message={alertState.message}
-                onClose={closeAlert}
-            />
+            {alert}
             <ExpensesNavigation />
             <div className="page-content max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
                 {/* Header */}
@@ -562,6 +320,8 @@ export default function ExpensesPage() {
                         Record daily corporate expenditures and monitor outbound cash flow logs.
                     </p>
                 </div>
+
+                {loadError && <Notice tone="error" title="Could Not Load Data">{loadError}</Notice>}
 
                 {/* Split Column Layout */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -580,24 +340,24 @@ export default function ExpensesPage() {
                         <form onSubmit={addToExpenseList} className="space-y-5">
                             {/* Date */}
                             <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
+                                <label className={labelClass}>
                                     Expenditure Date
                                 </label>
                                 <input
                                     type="date"
                                     value={expenseDate}
                                     onChange={(e) => setExpenseDate(e.target.value)}
-                                    className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                    className={inputClass}
                                     required
                                 />
                             </div>
 
                             {/* Category Dropdown */}
                             <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
+                                <label className={labelClass}>
                                     Expense Category / Item
                                 </label>
-                                {loadingDropdown ? (
+                                {categories.loading ? (
                                     <p className="text-slate-400 py-3 text-sm animate-pulse">Loading categories...</p>
                                 ) : (
                                     <select
@@ -609,7 +369,7 @@ export default function ExpensesPage() {
                                             setAmount(0);
                                             resetReturnFields();
                                         }}
-                                        className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                        className={inputClass}
                                         required
                                     >
                                         <option value="">Choose item type</option>
@@ -626,44 +386,33 @@ export default function ExpensesPage() {
                                     ════════════════════════════════════════════════ */}
                                 {isReturn && (
                                     <div className="mt-4 space-y-4">
+                                        {returnLoadError && <Notice tone="error">{returnLoadError}</Notice>}
 
                                         {/* ── Return Type Selector ─────────────────── */}
                                         <div>
-                                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                            <label className={labelClass}>
                                                 Return Type
                                             </label>
                                             <select
                                                 value={returnType}
                                                 onChange={(e) => {
-                                                    setReturnType(e.target.value as ReturnType);
-                                                    // Reset sub-fields when type changes
-                                                    setSelectedReturnProductId("");
-                                                    setReturnQuantity(0);
-                                                    setReturnAmount(0);
-                                                    setSelectedSaleId(null);
-                                                    setSelectedSaleItems([]);
-                                                    setSelectedSaleItemName("");
-                                                    setSaleReturnQuantity(0);
-                                                    setSaleReturnPrice(0);
-                                                    setSaleReturnExpensePrice(0);
-                                                    setCreditStockProductId("");
+                                                    setReturnType(e.target.value as ReturnType | "");
+                                                    clearReturnDetails();
                                                 }}
                                                 className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 bg-slate-900 text-white text-sm font-medium transition-all ${currentAccent}`}
                                                 required
                                             >
                                                 <option value="">Choose return type</option>
-                                                <option value="stock_expense_return">Stock Expense Return</option>
-                                                <option value="sale_reduction_return">Sale Reduction Return</option>
-                                                <option value="sale_reduction_expense_return">Sale Reduction Expense Return</option>
+                                                {(Object.keys(RETURN_TYPES) as ReturnType[]).map((type) => (
+                                                    <option key={type} value={type}>{RETURN_TYPES[type].label}</option>
+                                                ))}
                                             </select>
                                         </div>
 
                                         {/* ── Return type badge / description ──────── */}
                                         {returnType && (
-                                            <div className={`px-4 py-2.5 rounded-xl border text-xs font-semibold ${returnTypeBadgeClass[returnType]}`}>
-                                                {returnType === "stock_expense_return" && "📦 Stock will be reduced and an expense entry will be recorded."}
-                                                {returnType === "sale_reduction_return" && "🛒 Sale amount will be reduced and returned goods added back to stock."}
-                                                {returnType === "sale_reduction_expense_return" && "⚠️ Sale amount will be reduced and goods written off as an expense. No stock credit."}
+                                            <div className={`px-4 py-2.5 rounded-xl border text-xs font-semibold ${RETURN_TYPE_BADGE[returnType]}`}>
+                                                {RETURN_TYPE_EFFECTS[returnType]}
                                             </div>
                                         )}
 
@@ -674,7 +423,7 @@ export default function ExpensesPage() {
                                             <div className="space-y-3">
                                                 {/* Product picker */}
                                                 <div>
-                                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                                    <label className={labelClass}>
                                                         Choose a Product to Return
                                                     </label>
                                                     <select
@@ -705,7 +454,7 @@ export default function ExpensesPage() {
                                                     <div className="space-y-3">
                                                         <div className="grid grid-cols-2 gap-4">
                                                             <div>
-                                                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Quantity</label>
+                                                                <label className={labelClass}>Quantity</label>
                                                                 <input
                                                                     type="number"
                                                                     value={returnQuantity > 0 ? returnQuantity : ''}
@@ -718,7 +467,7 @@ export default function ExpensesPage() {
                                                                 />
                                                             </div>
                                                             <div>
-                                                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Amount per Unit (Rs.)</label>
+                                                                <label className={labelClass}>Amount per Unit (Rs.)</label>
                                                                 <input
                                                                     type="number"
                                                                     step="0.01"
@@ -737,7 +486,7 @@ export default function ExpensesPage() {
                                                                 Total Return Expense:
                                                             </span>
                                                             <span className="font-bold text-rose-400">
-                                                                Rs. {returnTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                {formatMoney(returnTotal)}
                                                             </span>
                                                         </div>
                                                     </div>
@@ -748,15 +497,15 @@ export default function ExpensesPage() {
                                         {/* ══════════════════════════════════════════════════
                                             SALE-REDUCTION RETURNS (sale_reduction / sale_reduction_expense)
                                             ══════════════════════════════════════════════════ */}
-                                        {(returnType === "sale_reduction_return" || returnType === "sale_reduction_expense_return") && (
+                                        {isSaleReturn && (
                                             <div className="space-y-4">
 
                                                 {/* ── Sale Selection Table ─────────────── */}
                                                 <div>
-                                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                                    <label className={labelClass}>
                                                         Select Sale Transaction
                                                     </label>
-                                                    {loadingSales ? (
+                                                    {salesList.loading ? (
                                                         <div className="flex items-center gap-2 py-3 text-slate-400 text-xs animate-pulse">
                                                             <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
                                                             Loading sales...
@@ -795,10 +544,10 @@ export default function ExpensesPage() {
                                                                             </td>
                                                                             <td className="px-3 py-2.5 font-semibold text-white">{sale.customer_name}</td>
                                                                             <td className="px-3 py-2.5 text-slate-400">
-                                                                                {new Date(sale.sale_date).toLocaleDateString()}
+                                                                                {formatDate(isoDateFromDb(sale.sale_date))}
                                                                             </td>
                                                                             <td className="px-3 py-2.5 text-right font-mono font-bold text-teal-400">
-                                                                                Rs.{Number(sale.grand_total).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                                Rs.{formatAmount(sale.grand_total)}
                                                                             </td>
                                                                         </tr>
                                                                     ))}
@@ -818,7 +567,7 @@ export default function ExpensesPage() {
                                                         )}
 
                                                         <div>
-                                                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                                            <label className={labelClass}>
                                                                 Select Item to Return
                                                             </label>
                                                             {loadingSaleItems ? (
@@ -863,7 +612,7 @@ export default function ExpensesPage() {
                                                             <div className="space-y-4">
                                                                 <div className="grid grid-cols-2 gap-4">
                                                                     <div>
-                                                                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Return Quantity</label>
+                                                                        <label className={labelClass}>Return Quantity</label>
                                                                         <input
                                                                             type="number"
                                                                             value={saleReturnQuantity > 0 ? saleReturnQuantity : ''}
@@ -876,7 +625,7 @@ export default function ExpensesPage() {
                                                                         />
                                                                     </div>
                                                                     <div>
-                                                                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Selling Price (Rs.)</label>
+                                                                        <label className={labelClass}>Selling Price (Rs.)</label>
                                                                         <input
                                                                             type="number"
                                                                             step="0.01"
@@ -892,7 +641,7 @@ export default function ExpensesPage() {
 
                                                                 {returnType === "sale_reduction_expense_return" && (
                                                                     <div>
-                                                                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Expense Rate per Unit (Rs.)</label>
+                                                                        <label className={labelClass}>Expense Rate per Unit (Rs.)</label>
                                                                         <input
                                                                             type="number"
                                                                             step="0.01"
@@ -911,7 +660,7 @@ export default function ExpensesPage() {
                                                         {/* Stock-to-credit picker — only for sale_reduction_return */}
                                                         {returnType === "sale_reduction_return" && selectedSaleItemName && (
                                                             <div>
-                                                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                                                <label className={labelClass}>
                                                                     Credit Stock Item (returned goods go to)
                                                                 </label>
                                                                 <select
@@ -942,7 +691,7 @@ export default function ExpensesPage() {
                                                                             Sale Reduction Amount:
                                                                         </span>
                                                                         <span className={`font-bold ${returnType === "sale_reduction_return" ? "text-teal-400" : "text-purple-400"}`}>
-                                                                            Rs. {saleReturnTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                            {formatMoney(saleReturnTotal)}
                                                                         </span>
                                                                     </div>
                                                                 )}
@@ -952,7 +701,7 @@ export default function ExpensesPage() {
                                                                             Recorded Expense Amount:
                                                                         </span>
                                                                         <span className="font-bold text-rose-400">
-                                                                            Rs. {saleReturnExpenseTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                            {formatMoney(saleReturnExpenseTotal)}
                                                                         </span>
                                                                     </div>
                                                                 )}
@@ -971,25 +720,25 @@ export default function ExpensesPage() {
                                 <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Quantity</label>
+                                            <label className={labelClass}>Quantity</label>
                                             <input
                                                 type="number"
                                                 value={quantityPerProduct > 0 ? quantityPerProduct : ''}
                                                 onChange={(e) => setQuantityPerProduct(Number(e.target.value))}
-                                                className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                                className={inputClass}
                                                 placeholder="0"
                                                 min="1"
                                                 required
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Rate per Item</label>
+                                            <label className={labelClass}>Rate per Item</label>
                                             <input
                                                 type="number"
                                                 step="0.01"
                                                 value={amount > 0 ? amount : ''}
                                                 onChange={(e) => setAmount(Number(e.target.value))}
-                                                className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                                className={inputClass}
                                                 placeholder="0.00"
                                                 min="0.01"
                                                 required
@@ -999,14 +748,14 @@ export default function ExpensesPage() {
                                     <div className="p-3.5 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100/50 dark:border-blue-900/30 rounded-xl flex items-center justify-between text-sm">
                                         <span className="text-slate-500 dark:text-slate-400">Total Calculation:</span>
                                         <span className="font-bold text-blue-600 dark:text-blue-400">
-                                            Rs. {calculatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                            {formatMoney(calculatedTotal)}
                                         </span>
                                     </div>
                                 </div>
                             ) : (
-                                expenseName !== "" && !isSalaryType && !isReturn && !requiresQuantity && (
+                                expenseName !== "" && !isSalaryType && !isReturn && (
                                     <div>
-                                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
+                                        <label className={labelClass}>
                                             Expense Amount (Rs.)
                                         </label>
                                         <input
@@ -1014,7 +763,7 @@ export default function ExpensesPage() {
                                             step="0.01"
                                             value={amount > 0 ? amount : ''}
                                             onChange={(e) => setAmount(Number(e.target.value))}
-                                            className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                            className={inputClass}
                                             placeholder="0.00"
                                             min="0.01"
                                             required
@@ -1029,11 +778,11 @@ export default function ExpensesPage() {
                                     <select
                                         value={employeeName}
                                         onChange={(e) => setEmployeeName(e.target.value)}
-                                        className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                        className={inputClass}
                                         required
                                     >
                                         <option value="">Choose Employee</option>
-                                        {allEmployees.map((employee: Employees) => (
+                                        {allEmployees.map((employee) => (
                                             <option key={employee.employee_id} value={employee.employee_name}>
                                                 {employee.employee_name}
                                             </option>
@@ -1047,7 +796,7 @@ export default function ExpensesPage() {
                                         step="0.01"
                                         value={amount > 0 ? amount : ''}
                                         onChange={(e) => setAmount(Number(e.target.value))}
-                                        className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
+                                        className={inputClass}
                                         placeholder="0.00"
                                         min="0.01"
                                         required
@@ -1082,7 +831,7 @@ export default function ExpensesPage() {
                                                 </svg>
                                                 <span>
                                                     {isReturn
-                                                        ? returnType ? `Submit ${returnTypeLabel[returnType] ?? "Return"}` : "Submit Return"
+                                                        ? returnType ? `Submit ${returnTypeLabel(returnType)}` : "Submit Return"
                                                         : "Post Expenditure Entry"}
                                                 </span>
                                             </>
@@ -1104,7 +853,7 @@ export default function ExpensesPage() {
                             <div className="text-right">
                                 <span className="text-slate-400 text-[10px] font-extrabold uppercase tracking-wider block mb-1">Total Expended</span>
                                 <p className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400">
-                                    Rs.{totalTodayExpenses.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    Rs.{formatAmount(totalTodayExpenses)}
                                 </p>
                             </div>
                         </div>
@@ -1118,10 +867,10 @@ export default function ExpensesPage() {
                                 <h4 className="text-sm font-bold text-slate-800 dark:text-white">Recent Ledger Stream</h4>
                             </div>
 
-                            {loadingRecent ? (
+                            {recent.loading ? (
                                 <div className="flex flex-col items-center justify-center py-20 space-y-3">
                                     <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                                    <p className="text-xs text-slate-400 font-medium">Re-indexing ledger feeds...</p>
+                                    <p className="text-xs text-slate-400 font-medium">Loading today&apos;s expenses...</p>
                                 </div>
                             ) : recentExpenses.length === 0 ? (
                                 <div className="text-center py-16 text-slate-400 dark:text-slate-500">

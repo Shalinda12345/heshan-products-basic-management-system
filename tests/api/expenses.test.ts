@@ -61,7 +61,14 @@ describe("POST /api/expenses/save-expenses", () => {
         ["a non-numeric amount", { per_expense_amount: "abc" }, "Per-expense amount cannot be negative."],
         ["a negative quantity", { quantity: -2 }, "Quantity must be greater than 0."],
         ["a non-numeric quantity", { quantity: "two" }, "Quantity must be greater than 0."],
+        ["a zero amount", { per_expense_amount: 0 }, "Per-expense amount must be greater than 0."],
+        ["an impossible date", { expense_date: "2026-02-30" }, "Expense date must be a valid date (YYYY-MM-DD)."],
+        ["a name that isn't text", { expense_name: 5 }, "Expense name is required."],
+        ["a total too large to store", { quantity: 99999, per_expense_amount: 99999 }, "The quantity or amount is too large."],
+        ["a salary for an inactive employee", { expense_name: "Salary", employee_name: "Former Hand" },
+            "Former Hand is inactive. Reactivate them on the Employees page before recording a payment."],
     ])("rejects %s with a clear message and writes nothing", async (_label, overrides, message) => {
+        await query("INSERT INTO employees (employee_name, employee_address, employee_contact_no, maritial_status, is_active) VALUES ('Former Hand', '', '', '', 0)");
         const { status, body } = await post(saveExpense, "/api/expenses/save-expenses", expense(overrides));
         expect(status).toBe(400);
         expect(body.message).toBe(message);

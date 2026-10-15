@@ -16,7 +16,6 @@ export const CHART = {
     grid: '#1e293b',
     axis: '#334155',
     tick: '#94a3b8',
-    surface: '#0f172a',
 };
 
 const tickStyle = { fill: CHART.tick, fontSize: 11 };

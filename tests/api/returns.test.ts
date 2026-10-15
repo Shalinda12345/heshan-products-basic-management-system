@@ -165,6 +165,20 @@ describe("return request validation", () => {
         expect(body.message).toBe("Invalid or missing return_type.");
     });
 
+    it("refuses a date that doesn't exist", async () => {
+        const { status, body } = await post(saveReturn, URL_, { return_type: "stock_expense_return", product_id: 2, product_name: "Yogurt", quantity: 1, per_unit_amount: 1, expense_date: "2026-02-30" });
+        expect(status).toBe(400);
+        expect(body.message).toBe("expense_date must be a valid date (YYYY-MM-DD).");
+    });
+
+    it("records the product whose stock was written off, whatever name was sent with it", async () => {
+        const { status } = await post(saveReturn, URL_, { return_type: "stock_expense_return", product_id: 2, product_name: "Watalappan", quantity: 1, per_unit_amount: 10, expense_date: "2026-10-13" });
+        expect(status).toBe(201);
+        expect((await query("SELECT expense_name FROM expenses ORDER BY expense_item_id DESC LIMIT 1"))[0].expense_name).toBe("Stock Expense Return: Yogurt");
+        expect(await query("SELECT product_id, product_name FROM stock_movements")).toEqual([{ product_id: 2, product_name: "Yogurt" }]);
+        expect((await query("SELECT product_name FROM returns"))[0].product_name).toBe("Yogurt");
+    });
+
     it("requires a date", async () => {
         const { status, body } = await post(saveReturn, URL_, { return_type: "stock_expense_return", product_id: 2, product_name: "Yogurt", quantity: 1, per_unit_amount: 1 });
         expect(status).toBe(400);

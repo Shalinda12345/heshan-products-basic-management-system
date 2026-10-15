@@ -12,7 +12,3 @@ export type ExpenseKind = keyof typeof EXPENSE_KINDS;
 export function isExpenseKind(value: unknown): value is ExpenseKind {
     return typeof value === "string" && Object.prototype.hasOwnProperty.call(EXPENSE_KINDS, value);
 }
-
-export function expenseKindLabel(kind: string): string {
-    return isExpenseKind(kind) ? EXPENSE_KINDS[kind].label : kind;
-}

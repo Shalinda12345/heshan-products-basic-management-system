@@ -7,15 +7,15 @@ import Image from 'next/image';
 import { logout } from '@/app/login/logout';
 import { usePermissions } from '@/app/components/auth/user-provider';
 import { MANAGE_TABS } from '@/app/components/admin/manage-navigation';
-import type { Permission } from '@/app/lib/permissions';
+import { canOpenPage } from '@/app/lib/permissions';
 
-// A main link is shown when the user has any of its permissions
-const NAV_LINKS: { href: string; label: string; anyOf: Permission[] }[] = [
-  { href: '/', label: 'Dashboard', anyOf: ['dashboard.view'] },
-  { href: '/pages/sales', label: 'Sales', anyOf: ['sales.create', 'sales.view'] },
-  { href: '/pages/expenses', label: 'Expenses', anyOf: ['expenses.create'] },
-  { href: '/pages/stock', label: 'Stock', anyOf: ['stock.view'] },
-  { href: '/reports', label: 'Reports', anyOf: ['reports.view'] },
+// A main link is shown when the user's role can open its page
+const NAV_LINKS: { href: string; label: string }[] = [
+  { href: '/', label: 'Dashboard' },
+  { href: '/pages/sales', label: 'Sales' },
+  { href: '/pages/expenses', label: 'Expenses' },
+  { href: '/pages/stock', label: 'Stock' },
+  { href: '/reports', label: 'Reports' },
 ];
 
 function initials(name: string) {
@@ -27,11 +27,11 @@ export default function Navbar() {
   const [manageOpen, setManageOpen] = useState(false);
   const manageRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
-  const { user, can, roleLabel } = usePermissions();
+  const { user, roleLabel } = usePermissions();
 
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`));
-  const links = NAV_LINKS.filter((link) => link.anyOf.some((p) => can(p)));
-  const manageLinks = MANAGE_TABS.filter((tab) => !tab.permission || can(tab.permission));
+  const links = NAV_LINKS.filter((link) => canOpenPage(user?.role, link.href));
+  const manageLinks = MANAGE_TABS.filter((tab) => canOpenPage(user?.role, tab.href));
   const manageActive = pathname.startsWith('/admin');
 
   // Close the Manage menu on a click elsewhere or Escape

@@ -2,6 +2,7 @@ import { and, asc, eq, ne } from "drizzle-orm";
 import { db, type DbExecutor } from "../db";
 import { products } from "../db/schema";
 import { RequestError } from "../lib/api-error";
+import { startOfDay } from "../lib/dates";
 import { formatMoney, formatQty } from "../lib/format";
 import { optionalAmount, optionalBoolean, optionalText, requiredText } from "../lib/validation";
 import { changedFields, describeChanges, logActivity, type Actor, type RequestInfo } from "./activity";
@@ -59,6 +60,13 @@ export async function findProduct(executor: DbExecutor, id: number): Promise<Pro
     return row ? toProduct(row) : null;
 }
 
+// For invoice lines saved before lines recorded their product's id
+export async function findProductByName(executor: DbExecutor, name: string): Promise<Product | null> {
+    const [row] = await executor.select().from(products)
+        .where(eq(products.product_name, name)).orderBy(asc(products.product_id)).limit(1);
+    return row ? toProduct(row) : null;
+}
+
 // Product names identify products on invoices, so two products can't share one (ignoring case)
 async function assertNameFree(executor: DbExecutor, name: string, exceptId?: number) {
     const [clash] = await executor
@@ -94,14 +102,12 @@ export async function createProduct(actor: Actor, input: ProductInput, info: Req
         const productId = Number(result.insertId);
 
         if (openingStock > 0) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
             await applyStockMovement(tx, {
                 productId,
                 productName: values.product_name,
                 movementType: "opening_balance",
                 quantity: openingStock,
-                movementDate: today,
+                movementDate: startOfDay(),
                 reference: "Opening stock",
                 createdBy: actor.id,
             });

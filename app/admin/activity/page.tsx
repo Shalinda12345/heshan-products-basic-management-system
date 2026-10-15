@@ -5,7 +5,7 @@ import ManageNavigation from '@/app/components/admin/manage-navigation';
 import { PageHeader, PageShell, Card, LoadingRows, TableMessage, tableClasses as t } from '@/app/components/ui/page-shell';
 import { Button, Toggle, filterClass } from '@/app/components/ui/form';
 import { Badge, Notice } from '@/app/components/ui/feedback';
-import Pagination from '@/app/components/ui/pagination';
+import Pagination, { withPageReset } from '@/app/components/ui/pagination';
 import { queryString } from '@/app/lib/api-client';
 import { useResource } from '@/app/lib/use-resource';
 import { formatDateTime } from '@/app/lib/format';
@@ -98,11 +98,7 @@ export default function ActivityLogPage() {
     const log = useResource<ActivityPage>(`/api/activity${queryString({ ...filters, page, page_size: PAGE_SIZE, include_users: 1 })}`);
     const filtered = !!(from || to || userId || category || attention || search.trim());
 
-    // Changing a filter starts again from the first page
-    const update = <T,>(setter: (value: T) => void) => (value: T) => {
-        setter(value);
-        setPage(1);
-    };
+    const update = withPageReset(setPage);
 
     const clear = () => {
         setFrom('');

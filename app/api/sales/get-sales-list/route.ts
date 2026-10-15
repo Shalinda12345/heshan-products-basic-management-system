@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/app/db";
 import { sales } from "@/app/db/schema";
 import { desc } from "drizzle-orm";
-import { toReadErrorResponse } from "@/app/lib/api-error";
+import { readErrorJson } from "@/app/lib/api-error";
 import { authorize } from "@/app/lib/auth";
 import { postedSale } from "@/app/services/sales";
 
@@ -30,8 +30,6 @@ export async function GET(request: Request) {
 
         return NextResponse.json(allSales);
     } catch (error) {
-        console.error("Failed to fetch sales list:", error);
-        const { message, status } = toReadErrorResponse(error);
-        return NextResponse.json({ error: message }, { status });
+        return readErrorJson(error, "Failed to fetch sales list:");
     }
 }

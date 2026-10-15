@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert';
+import { useAlert } from '@/app/components/ui/custom-alert';
+import { filterClass, inputClass, labelClass } from '@/app/components/ui/form';
 import { usePermissions } from '@/app/components/auth/user-provider';
-import { backgroundFetch, useLiveRefresh } from '@/app/lib/use-live-refresh';
-import { responseErrorMessage } from '@/app/lib/fetch-error';
-import { toIsoDate } from '@/app/lib/dates';
+import { apiGet, apiSend, errorMessage, isNetworkError, queryString } from '@/app/lib/api-client';
+import { isoDateFromDb, toIsoDate } from '@/app/lib/dates';
+import { formatDate, formatQty } from '@/app/lib/format';
+import { useLiveRefresh } from '@/app/lib/use-live-refresh';
 import {
   MANUAL_MOVEMENT_TYPES,
   movementLabel,
@@ -46,13 +48,8 @@ type Mode = StockDirection | 'COUNT';
 const LIVE_REFRESH_MS = 5000;
 const LEDGER_LIMIT = 100;
 
-const fmtQty = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-
-const inputClass =
-  'w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all';
-const labelClass = 'block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2';
-const filterClass =
-  'px-3 py-2 border border-slate-800 rounded-xl focus:outline-none focus:border-indigo-500 bg-slate-900 text-white text-xs font-semibold';
+// When each movement was entered, in the viewer's own clock format
+const timeFormat = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 
 export default function StockPage() {
   const { can } = usePermissions();
@@ -82,40 +79,23 @@ export default function StockPage() {
   const [ledgerFrom, setLedgerFrom] = useState<string>('');
   const [ledgerTo, setLedgerTo] = useState<string>('');
 
-  const [alertState, setAlertState] = useState<{ isOpen: boolean; variant: AlertVariant; title: string; message: string }>({
-    isOpen: false,
-    variant: 'info',
-    title: '',
-    message: '',
-  });
+  const { show: showAlert, alert } = useAlert();
 
-  const showAlert = useCallback((variant: AlertVariant, title: string, message: string) => {
-    setAlertState({ isOpen: true, variant, title, message });
-  }, []);
-
-  const closeAlert = () => {
-    setAlertState(prev => ({ ...prev, isOpen: false }));
-  };
-
-  const ledgerQuery = (() => {
-    const params = new URLSearchParams({ limit: String(LEDGER_LIMIT) });
-    if (ledgerProductId) params.set('product_id', ledgerProductId);
-    if (ledgerDirection) params.set('direction', ledgerDirection);
-    if (ledgerFrom) params.set('from', ledgerFrom);
-    if (ledgerTo) params.set('to', ledgerTo);
-    return params.toString();
-  })();
+  const ledgerUrl = `/api/stock/movements${queryString({
+    limit: LEDGER_LIMIT,
+    product_id: ledgerProductId,
+    direction: ledgerDirection,
+    from: ledgerFrom,
+    to: ledgerTo,
+  })}`;
 
   // Loads stock levels and the ledger together so both always describe the same moment
   const loadData = useCallback(async () => {
     try {
-      const [stockRes, movementsRes] = await Promise.all([
-        backgroundFetch('/api/stock'),
-        backgroundFetch(`/api/stock/movements?${ledgerQuery}`),
+      const [stockData, movementData] = await Promise.all([
+        apiGet<StockItem[]>('/api/stock', { background: true }),
+        apiGet<StockMovement[]>(ledgerUrl, { background: true }),
       ]);
-      const failed = [stockRes, movementsRes].find(res => !res.ok);
-      if (failed) throw new Error(await responseErrorMessage(failed, 'Failed to retrieve stock levels.'));
-      const [stockData, movementData]: [StockItem[], StockMovement[]] = await Promise.all([stockRes.json(), movementsRes.json()]);
 
       // Highlight movements that arrived since the previous refresh
       const previousLatest = latestMovementId.current;
@@ -138,17 +118,13 @@ export default function StockPage() {
       setConnectionLost(true);
       throw error;
     }
-  }, [ledgerQuery]);
+  }, [ledgerUrl]);
 
   useEffect(() => {
     let cancelled = false;
     loadData()
       .catch((error: unknown) => {
-        // fetch() itself fails with a TypeError when the server can't be reached
-        const message = error instanceof TypeError
-          ? 'Could not reach the server. Refresh the page to try again.'
-          : error instanceof Error ? error.message : 'Failed to retrieve stock levels.';
-        if (!cancelled) showAlert('error', 'Could Not Load Stock', message);
+        if (!cancelled) showAlert('error', 'Could Not Load Stock', errorMessage(error));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -180,27 +156,19 @@ export default function StockPage() {
     }
     setIsSubmitting(true);
     try {
-      const response = await fetch('/api/stock/adjust', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product_id: Number(selectedProductId), counted_quantity: Number(countedQuantity), movement_date: movementDate, note }),
+      const result = await apiSend<{ data: { difference: number } }>('/api/stock/adjust', 'POST', {
+        product_id: Number(selectedProductId), counted_quantity: Number(countedQuantity), movement_date: movementDate, note,
       });
-      if (!response.ok) {
-        showAlert('error', 'Count Not Saved', await responseErrorMessage(response, 'The stock count could not be saved.'));
-        return;
-      }
-      const result = await response.json();
       await loadData().catch(() => undefined);
-      const { difference } = result.data as { difference: number };
+      const { difference } = result.data;
       showAlert('success', 'Stock Count Saved', difference === 0
-        ? `"${selectedProduct?.product_name}" matches the system at ${fmtQty(Number(countedQuantity))}.`
-        : `"${selectedProduct?.product_name}" corrected by ${difference > 0 ? '+' : '−'}${fmtQty(Math.abs(difference))} to ${fmtQty(Number(countedQuantity))}.`);
+        ? `"${selectedProduct?.product_name}" matches the system at ${formatQty(Number(countedQuantity))}.`
+        : `"${selectedProduct?.product_name}" corrected by ${difference > 0 ? '+' : '−'}${formatQty(Math.abs(difference))} to ${formatQty(Number(countedQuantity))}.`);
       setSelectedProductId('');
       setCountedQuantity('');
       setNote('');
     } catch (error: unknown) {
-      console.error('Error saving stock count:', error);
-      showAlert('error', 'Network Error', 'A connection error occurred. Please try again.');
+      showAlert('error', isNetworkError(error) ? 'Network Error' : 'Count Not Saved', errorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -217,44 +185,32 @@ export default function StockPage() {
       return;
     }
     if (direction === 'OUT' && selectedProduct && quantity > selectedProduct.quantity) {
-      showAlert('warning', 'Insufficient Stock', `Only ${fmtQty(selectedProduct.quantity)} units of "${selectedProduct.product_name}" are in stock.`);
+      showAlert('warning', 'Insufficient Stock', `Only ${formatQty(selectedProduct.quantity)} units of "${selectedProduct.product_name}" are in stock.`);
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const response = await fetch('/api/stock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          product_id: Number(selectedProductId),
-          quantity,
-          direction,
-          movement_type: movementType,
-          movement_date: movementDate,
-          note,
-        }),
+      const result = await apiSend<{ data: { quantity: number } }>('/api/stock', 'POST', {
+        product_id: Number(selectedProductId),
+        quantity,
+        direction,
+        movement_type: movementType,
+        movement_date: movementDate,
+        note,
       });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        const name = selectedProduct?.product_name || 'Product';
-        await loadData().catch(() => undefined);
-        if (direction === 'IN') {
-          showAlert('success', 'Stock Added', `Successfully added ${fmtQty(quantity)} units of "${name}". New balance: ${fmtQty(result.data.quantity)}.`);
-        } else {
-          showAlert('success', 'Stock Removed', `Removed ${fmtQty(quantity)} units of "${name}" (${movementLabel(movementType)}). New balance: ${fmtQty(result.data.quantity)}.`);
-        }
-        setSelectedProductId('');
-        setQuantity(0);
-        setNote('');
+      const name = selectedProduct?.product_name || 'Product';
+      await loadData().catch(() => undefined);
+      if (direction === 'IN') {
+        showAlert('success', 'Stock Added', `Successfully added ${formatQty(quantity)} units of "${name}". New balance: ${formatQty(result.data.quantity)}.`);
       } else {
-        showAlert('error', 'Action Failed', result.error || 'Failed to record the stock movement.');
+        showAlert('success', 'Stock Removed', `Removed ${formatQty(quantity)} units of "${name}" (${movementLabel(movementType)}). New balance: ${formatQty(result.data.quantity)}.`);
       }
+      setSelectedProductId('');
+      setQuantity(0);
+      setNote('');
     } catch (error: unknown) {
-      console.error('Error recording stock movement:', error);
-      showAlert('error', 'Network Error', 'A connection error occurred. Please try again.');
+      showAlert('error', isNetworkError(error) ? 'Network Error' : 'Action Failed', errorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -282,7 +238,7 @@ export default function StockPage() {
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-950/30 text-red-400 border border-red-900/30">
           <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-          Out of Stock ({fmtQty(qty)})
+          Out of Stock ({formatQty(qty)})
         </span>
       );
     }
@@ -290,37 +246,31 @@ export default function StockPage() {
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-950/30 text-amber-400 border border-amber-900/30">
           <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-          Low Stock ({fmtQty(qty)})
+          Low Stock ({formatQty(qty)})
         </span>
       );
     }
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950/30 text-emerald-400 border border-emerald-900/30">
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-        In Stock ({fmtQty(qty)})
+        In Stock ({formatQty(qty)})
       </span>
     );
   };
 
   const kpis = [
     { label: 'Products', value: String(stockItems.length), hint: 'Tracked items', tone: 'text-slate-100' },
-    { label: 'Units on Hand', value: fmtQty(totals.units), hint: 'Across all products', tone: 'text-sky-300' },
+    { label: 'Units on Hand', value: formatQty(totals.units), hint: 'Across all products', tone: 'text-sky-300' },
     { label: 'Low Stock', value: String(totals.low), hint: 'At or below reorder level', tone: totals.low > 0 ? 'text-amber-400' : 'text-slate-100' },
     { label: 'Out of Stock', value: String(totals.out), hint: 'Nothing left to sell', tone: totals.out > 0 ? 'text-red-400' : 'text-slate-100' },
-    { label: 'Today In', value: `+${fmtQty(totals.todayIn)}`, hint: 'Units received today', tone: 'text-emerald-400' },
-    { label: 'Today Out', value: `−${fmtQty(totals.todayOut)}`, hint: 'Units sold or removed', tone: 'text-rose-400' },
+    { label: 'Today In', value: `+${formatQty(totals.todayIn)}`, hint: 'Units received today', tone: 'text-emerald-400' },
+    { label: 'Today Out', value: `−${formatQty(totals.todayOut)}`, hint: 'Units sold or removed', tone: 'text-rose-400' },
   ];
 
   return (
     <main className="page-wrapper">
       <div className="page-glow" />
-      <CustomAlert
-        isOpen={alertState.isOpen}
-        variant={alertState.variant}
-        title={alertState.title}
-        message={alertState.message}
-        onClose={closeAlert}
-      />
+      {alert}
       <div className="page-content max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
 
         {/* Header Section */}
@@ -413,7 +363,7 @@ export default function StockPage() {
                     <option value="">Choose product</option>
                     {formProducts.map((product) => (
                       <option key={product.product_id} value={product.product_id}>
-                        {product.product_name} — {fmtQty(product.quantity)} in stock{product.is_active ? '' : ' (inactive)'}
+                        {product.product_name} — {formatQty(product.quantity)} in stock{product.is_active ? '' : ' (inactive)'}
                       </option>
                     ))}
                   </select>
@@ -495,12 +445,12 @@ export default function StockPage() {
               {selectedProduct && mode === 'COUNT' && (
                 <div className="p-3.5 rounded-xl border flex items-center justify-between text-sm bg-indigo-950/20 border-indigo-900/30">
                   <span className="text-slate-400">
-                    System <span className="font-bold text-white">{fmtQty(selectedProduct.quantity)}</span>
-                    {countDifference !== null && <> → counted <span className="font-bold text-white">{fmtQty(Number(countedQuantity))}</span></>}
+                    System <span className="font-bold text-white">{formatQty(selectedProduct.quantity)}</span>
+                    {countDifference !== null && <> → counted <span className="font-bold text-white">{formatQty(Number(countedQuantity))}</span></>}
                   </span>
                   {countDifference !== null && (
                     <span className={`text-xs font-bold ${countDifference === 0 ? 'text-slate-400' : countDifference > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {countDifference === 0 ? 'No difference' : `${countDifference > 0 ? '+' : '−'}${fmtQty(Math.abs(countDifference))}`}
+                      {countDifference === 0 ? 'No difference' : `${countDifference > 0 ? '+' : '−'}${formatQty(Math.abs(countDifference))}`}
                     </span>
                   )}
                 </div>
@@ -509,8 +459,8 @@ export default function StockPage() {
               {selectedProduct && mode !== 'COUNT' && (
                 <div className={`p-3.5 rounded-xl border flex items-center justify-between text-sm ${direction === 'IN' ? 'bg-emerald-950/20 border-emerald-900/30' : 'bg-rose-950/20 border-rose-900/30'}`}>
                   <span className="text-slate-400">
-                    Current <span className="font-bold text-white">{fmtQty(selectedProduct.quantity)}</span>
-                    {quantity > 0 && <> → after <span className="font-bold text-white">{fmtQty(projectedBalance ?? 0)}</span></>}
+                    Current <span className="font-bold text-white">{formatQty(selectedProduct.quantity)}</span>
+                    {quantity > 0 && <> → after <span className="font-bold text-white">{formatQty(projectedBalance ?? 0)}</span></>}
                   </span>
                   {projectedBalance !== null && projectedBalance < 0 && (
                     <span className="text-xs font-bold text-rose-400">Exceeds stock</span>
@@ -591,10 +541,10 @@ export default function StockPage() {
                           <p className="text-slate-500 text-xs">{item.description}</p>
                         </td>
                         <td className="py-3.5 px-4 text-right font-mono text-sm">
-                          {item.today_in > 0 ? <span className="text-emerald-400 font-bold">+{fmtQty(item.today_in)}</span> : <span className="text-slate-600">—</span>}
+                          {item.today_in > 0 ? <span className="text-emerald-400 font-bold">+{formatQty(item.today_in)}</span> : <span className="text-slate-600">—</span>}
                         </td>
                         <td className="py-3.5 px-4 text-right font-mono text-sm">
-                          {item.today_out > 0 ? <span className="text-rose-400 font-bold">−{fmtQty(item.today_out)}</span> : <span className="text-slate-600">—</span>}
+                          {item.today_out > 0 ? <span className="text-rose-400 font-bold">−{formatQty(item.today_out)}</span> : <span className="text-slate-600">—</span>}
                         </td>
                         <td className="py-3.5 px-5 text-right font-medium">
                           {getStockBadge(item.quantity, item.reorder_level)}
@@ -674,12 +624,8 @@ export default function StockPage() {
                     return (
                       <tr key={m.movement_id} className={`transition-colors duration-700 ${freshIds.has(m.movement_id) ? 'bg-indigo-500/15' : 'hover:bg-slate-800/40'}`}>
                         <td className="py-3 px-4 whitespace-nowrap">
-                          <p className="text-slate-200 font-medium">{new Date(m.movement_date).toLocaleDateString(undefined, { dateStyle: 'medium' })}</p>
-                          {m.created_at && (
-                            <p className="text-[11px] text-slate-500">
-                              {new Date(m.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                            </p>
-                          )}
+                          <p className="text-slate-200 font-medium">{formatDate(isoDateFromDb(m.movement_date))}</p>
+                          {m.created_at && <p className="text-[11px] text-slate-500">{timeFormat.format(new Date(m.created_at))}</p>}
                         </td>
                         <td className="py-3 px-4 font-semibold text-white">{m.product_name}</td>
                         <td className="py-3 px-4">
@@ -691,9 +637,9 @@ export default function StockPage() {
                           <p className="text-slate-300 font-mono">{m.reference ?? '—'}</p>
                           {m.note && <p className="text-slate-500 mt-0.5">{m.note}</p>}
                         </td>
-                        <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">{isIn ? `+${fmtQty(m.quantity)}` : ''}</td>
-                        <td className="py-3 px-4 text-right font-mono font-bold text-rose-400">{isIn ? '' : `−${fmtQty(m.quantity)}`}</td>
-                        <td className="py-3 px-4 text-right font-mono text-slate-200">{fmtQty(m.balance_after)}</td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">{isIn ? `+${formatQty(m.quantity)}` : ''}</td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-rose-400">{isIn ? '' : `−${formatQty(m.quantity)}`}</td>
+                        <td className="py-3 px-4 text-right font-mono text-slate-200">{formatQty(m.balance_after)}</td>
                         <td className="py-3 px-4 text-xs text-slate-400 whitespace-nowrap">{m.created_by_name ?? '—'}</td>
                       </tr>
                     );

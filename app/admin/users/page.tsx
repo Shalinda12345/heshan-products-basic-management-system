@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import ManageNavigation from '@/app/components/admin/manage-navigation';
 import { useCurrentUser } from '@/app/components/auth/user-provider';
 import { PageHeader, PageShell, Card, LoadingRows, TableMessage, tableClasses as t } from '@/app/components/ui/page-shell';
@@ -164,8 +165,14 @@ export default function UsersAdminPage() {
                                     <td className={`${t.td} whitespace-nowrap text-slate-400`}>{u.last_login_at ? formatDateTime(u.last_login_at) : 'Never'}</td>
                                     <td className={`${t.td} text-right whitespace-nowrap`}>
                                         <Button variant="ghost" size="sm" onClick={() => open(u)}>Edit</Button>
-                                        <Button variant="ghost" size="sm" onClick={() => setConfirm({ kind: 'reset', user: u })}>Reset password</Button>
-                                        {u.id !== me?.id && <Button variant="ghost" size="sm" onClick={() => setConfirm({ kind: 'signout', user: u })}>Sign out</Button>}
+                                        {u.id === me?.id ? (
+                                            <Link href="/account" className="inline-flex px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/70">Change password</Link>
+                                        ) : (
+                                            <>
+                                                <Button variant="ghost" size="sm" onClick={() => setConfirm({ kind: 'reset', user: u })}>Reset password</Button>
+                                                <Button variant="ghost" size="sm" onClick={() => setConfirm({ kind: 'signout', user: u })}>Sign out</Button>
+                                            </>
+                                        )}
                                     </td>
                                 </tr>
                             ))}

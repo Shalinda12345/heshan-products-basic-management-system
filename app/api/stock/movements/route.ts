@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/app/db";
 import { stock_movements, users } from "@/app/db/schema";
 import { and, desc, eq, gte, lte, type SQL } from "drizzle-orm";
-import { isIsoDate, parseLocalDate } from "@/app/lib/dates";
-import { toReadErrorResponse } from "@/app/lib/api-error";
+import { RequestError, readErrorJson } from "@/app/lib/api-error";
 import { authorize } from "@/app/lib/auth";
+import { isIsoDate, parseLocalDate } from "@/app/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -28,17 +28,17 @@ export async function GET(request: Request) {
         const limitParam = searchParams.get("limit");
 
         if (productId !== null && (!Number.isInteger(Number(productId)) || Number(productId) <= 0)) {
-            return NextResponse.json({ error: "Invalid parameter: product_id must be a positive integer" }, { status: 400 });
+            throw new RequestError("Invalid parameter: product_id must be a positive integer");
         }
         if (direction !== undefined && direction !== "IN" && direction !== "OUT") {
-            return NextResponse.json({ error: 'Invalid parameter: direction must be "IN" or "OUT"' }, { status: 400 });
+            throw new RequestError('Invalid parameter: direction must be "IN" or "OUT"');
         }
         if ((from !== null && !isIsoDate(from)) || (to !== null && !isIsoDate(to))) {
-            return NextResponse.json({ error: "Invalid parameter: from/to must be YYYY-MM-DD dates" }, { status: 400 });
+            throw new RequestError("Invalid parameter: from/to must be YYYY-MM-DD dates");
         }
         const limit = limitParam === null ? DEFAULT_LIMIT : Number(limitParam);
         if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) {
-            return NextResponse.json({ error: `Invalid parameter: limit must be between 1 and ${MAX_LIMIT}` }, { status: 400 });
+            throw new RequestError(`Invalid parameter: limit must be between 1 and ${MAX_LIMIT}`);
         }
 
         const filters: SQL[] = [];
@@ -65,8 +65,6 @@ export async function GET(request: Request) {
             { headers: { "Cache-Control": "no-store" } }
         );
     } catch (error) {
-        console.error("Failed to fetch stock movements:", error);
-        const { message, status } = toReadErrorResponse(error);
-        return NextResponse.json({ error: message }, { status });
+        return readErrorJson(error, "Failed to fetch stock movements:");
     }
 }

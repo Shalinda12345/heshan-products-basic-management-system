@@ -368,13 +368,13 @@ export async function runMigrations(conn: Connection, log: Log = () => undefined
 // Returns the credentials when an account was created or restored, so they can be shown once.
 export async function ensureAdminAccount(
     conn: Connection,
-    options: { username?: string; password?: string } = {}
+    options: { password?: string } = {}
 ): Promise<{ username: string; password: string } | null> {
     const sql = sqlRunner(conn);
     const admins = await sql("SELECT id FROM users WHERE role = 'admin' AND is_active = 1 AND password_hash IS NOT NULL");
     if (admins.length > 0) return null;
 
-    const username = (options.username ?? "admin").trim().toLowerCase();
+    const username = "admin";
     const password = options.password || generateTemporaryPassword(14);
     const passwordHash = await hashPassword(password);
 
