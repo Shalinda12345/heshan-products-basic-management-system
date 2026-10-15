@@ -1,7 +1,11 @@
 // Input checks shared by the API services. Each throws a RequestError whose message names the field.
 import { RequestError } from "./api-error";
-import { isIsoDate } from "./dates";
+import { endOfDay, isIsoDate, startOfDay } from "./dates";
 import { roundMoney } from "./money";
+import { rangeDays, weekContaining, type DateRange } from "./periods";
+
+// Amounts and quantities are stored as DOUBLE(10,2), which holds values below this
+export const AMOUNT_LIMIT = 1e8;
 
 export function requiredText(value: unknown, field: string, max = 255): string {
     const text = typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
@@ -22,14 +26,14 @@ export function optionalAmount(value: unknown, field: string): number | null {
     if (value === undefined || value === null || value === "") return null;
     const amount = Number(value);
     if (!Number.isFinite(amount) || amount < 0) throw new RequestError(`${field} must be a number of 0 or more.`);
-    if (amount >= 1e8) throw new RequestError(`${field} is too large.`);
+    if (amount >= AMOUNT_LIMIT) throw new RequestError(`${field} is too large.`);
     return roundMoney(amount);
 }
 
 export function positiveNumber(value: unknown, field: string): number {
     const n = Number(value);
     if (value === null || value === "" || !Number.isFinite(n) || n <= 0) throw new RequestError(`${field} must be greater than 0.`);
-    if (n >= 1e8) throw new RequestError(`${field} is too large.`);
+    if (n >= AMOUNT_LIMIT) throw new RequestError(`${field} is too large.`);
     return n;
 }
 
@@ -52,6 +56,22 @@ export function positiveId(value: unknown, what = "id"): number {
 
 // ─── Query string parameters ──────────────────────────────────────────────────
 
+// A whole-number parameter from `min` to `max`, or null when it is missing
+export function intParam(params: URLSearchParams, name: string, min: number, max: number): number | null {
+    const raw = params.get(name);
+    if (raw === null || raw === "") return null;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < min || value > max) {
+        throw new RequestError(`Invalid parameter: ${name} must be a whole number from ${min} to ${max}`);
+    }
+    return value;
+}
+
+// ?year= and ?month= (1-12) of a report
+export function yearMonthParams(params: URLSearchParams): { year: number | null; month: number | null } {
+    return { year: intParam(params, "year", 1900, 2999), month: intParam(params, "month", 1, 12) };
+}
+
 export function dateParam(params: URLSearchParams, name: string): string | null {
     const value = params.get(name);
     if (value === null || value === "") return null;
@@ -66,6 +86,32 @@ export function dateRangeParams(params: URLSearchParams, required = false): { fr
     if (required && (!from || !to)) throw new RequestError("Invalid parameters: from and to (YYYY-MM-DD) are required");
     if (from && to && from > to) throw new RequestError("Invalid parameters: from must not be after to");
     return { from, to };
+}
+
+// The period of a report: ?from= and ?to= are required, at most 10 years apart
+export function reportRangeParams(params: URLSearchParams): DateRange {
+    const { from, to } = dateRangeParams(params, true);
+    const range = { from: from!, to: to! };
+    if (rangeDays(range) > 3660) throw new RequestError("Invalid parameters: the period can be at most 10 years");
+    return range;
+}
+
+// The dates a day/week/month listing covers, as local times for comparing with DATE columns: the month in
+// ?year=&month=, otherwise the current day, week (Monday to Sunday) or month. A month listing takes either
+// parameter alone; the others need both.
+export function periodParams(params: URLSearchParams, fallback: "day" | "week" | "month", now = new Date()): { start: Date; end: Date } {
+    const { year, month: monthNumber } = yearMonthParams(params);
+    const month = monthNumber === null ? null : monthNumber - 1;
+    if (fallback === "month" || (year !== null && month !== null)) {
+        const y = year ?? now.getFullYear();
+        const m = month ?? now.getMonth();
+        return { start: new Date(y, m, 1), end: endOfDay(new Date(y, m + 1, 0)) };
+    }
+    if (fallback === "week") {
+        const { start, end } = weekContaining(now);
+        return { start, end: endOfDay(end) };
+    }
+    return { start: startOfDay(now), end: endOfDay(now) };
 }
 
 export function pageParams(params: URLSearchParams, defaultSize = 50, maxSize = 200): { page: number; pageSize: number } {
@@ -85,7 +131,7 @@ export function statusParam(params: URLSearchParams): "posted" | "void" | null {
     return status;
 }
 
-// For "the same name already exists" checks: names compare without case or surrounding spaces
-export function sameName(a: string, b: string): boolean {
-    return a.trim().toLowerCase() === b.trim().toLowerCase();
+// A LIKE pattern matching `text` anywhere, with any % _ \ in it taken literally
+export function likeContains(text: string): string {
+    return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }

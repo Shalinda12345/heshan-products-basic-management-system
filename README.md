@@ -112,7 +112,7 @@ Seeded test accounts (`admin`, `owner`, `manager`, `staff`, and the disabled `fo
 | Path | Contents |
 | --- | --- |
 | `app/api/` | Route handlers; each starts with `authorize(request, permission)` |
-| `app/services/` | Business logic (sales, returns, expenses, stock ledger, users, reports), each change logged in its transaction |
+| `app/services/` | Business logic (sales, returns, expenses, stock movements and counts, users, reports), each change logged in its transaction |
 | `app/lib/` | Shared code: permissions, sessions, passwords, formatting, periods; files without server imports are used by pages too |
 | `app/db/` | Drizzle schema and the migrations |
 | `app/admin/`, `app/reports/`, `app/pages/` | Management screens, reports, and the day-to-day sales/expense/stock screens |

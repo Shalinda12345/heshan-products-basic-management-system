@@ -4,7 +4,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { SESSION_COOKIE, createSessionToken, sessionCookieOptions } from "@/app/lib/session";
 import { landingPath, sessionClaims } from "@/app/lib/auth";
-import { DATABASE_OUTDATED_MESSAGE, DATABASE_UNAVAILABLE_MESSAGE, toReadErrorResponse } from "@/app/lib/api-error";
+import { databaseProblem } from "@/app/lib/api-error";
 import { requestInfo } from "@/app/services/activity";
 import { signIn } from "@/app/services/users";
 
@@ -24,9 +24,9 @@ export async function handleLogin(prevState: LoginState | null, formData: FormDa
         result = await signIn(username, password, requestInfo(await headers()));
     } catch (error) {
         console.error("Sign-in failed:", error);
-        const { message } = toReadErrorResponse(error);
-        const known = message === DATABASE_UNAVAILABLE_MESSAGE || message === DATABASE_OUTDATED_MESSAGE;
-        return { error: known ? message : "Sign-in failed because of a server problem. Please try again.", username };
+        // A database that is down or out of date is worth naming; anything else stays a generic server problem
+        const message = databaseProblem(error)?.message ?? "Sign-in failed because of a server problem. Please try again.";
+        return { error: message, username };
     }
     if (!result.ok) return { error: result.message, username };
 

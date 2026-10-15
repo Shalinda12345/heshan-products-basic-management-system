@@ -1,6 +1,5 @@
-'use client';
-
-// Saves a table as a CSV file the user can open in Excel.
+// Tables as CSV files the user can open in Excel. toCsv also runs on the server (the activity log export);
+// downloadCsv only in the browser.
 
 export interface CsvColumn<T> {
     header: string;
@@ -9,8 +8,9 @@ export interface CsvColumn<T> {
 
 function cell(value: string | number | null | undefined): string {
     const text = value === null || value === undefined ? '' : String(value);
-    // Spreadsheet programs run cells that start with these as formulas
-    const safe = typeof value === 'string' && /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+    // Spreadsheet programs run cells that start with these as formulas; a plain number such as "-2120.00" is safe
+    const formula = typeof value === 'string' && /^[=+\-@\t\r]/.test(text) && !/^-?\d+(\.\d+)?$/.test(text);
+    const safe = formula ? `'${text}` : text;
     return `"${safe.replace(/"/g, '""')}"`;
 }
 

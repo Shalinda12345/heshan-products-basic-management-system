@@ -8,6 +8,19 @@ export const labelClass = 'block text-xs font-bold uppercase tracking-wider text
 export const filterClass =
     'px-3 py-2 border border-slate-800 rounded-xl focus:outline-none focus:border-indigo-500 bg-slate-900 text-white text-xs font-semibold';
 
+export type StatusChoice = 'all' | 'posted' | 'void';
+
+// The posted / void filter of the invoice, expense and return registers
+export function StatusFilter({ value, onChange }: { value: StatusChoice; onChange: (value: StatusChoice) => void }) {
+    return (
+        <select aria-label="Status" value={value} onChange={(e) => onChange(e.target.value as StatusChoice)} className={filterClass}>
+            <option value="all">Posted &amp; void</option>
+            <option value="posted">Posted only</option>
+            <option value="void">Void only</option>
+        </select>
+    );
+}
+
 // A labelled form control. The label is linked to the control, so screen readers (and tests) find it by name.
 export function Field({ label, hint, error, children }: {
     label: string;

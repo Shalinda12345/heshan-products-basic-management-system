@@ -4,6 +4,7 @@ import { users } from "../db/schema";
 import { RequestError } from "../lib/api-error";
 import { generateTemporaryPassword, hashPassword, passwordProblem, verifyPassword } from "../lib/password";
 import { ROLE_INFO, isRole, type Role } from "../lib/permissions";
+import { requiredText } from "../lib/validation";
 import type { CurrentUser } from "../lib/auth";
 import { changedFields, logActivity, type Actor, type RequestInfo } from "./activity";
 
@@ -29,11 +30,11 @@ function cleanEmail(value: unknown): string | null {
     return email;
 }
 
-function cleanName(value: unknown): string {
-    const name = String(value ?? "").trim();
-    if (!name) throw new RequestError("Full name is required.");
-    if (name.length > 255) throw new RequestError("Full name is too long.");
-    return name;
+// A random temporary password that also passes the password rules for this user (it never contains the username)
+function temporaryPasswordFor(username: string): string {
+    let password = generateTemporaryPassword();
+    while (passwordProblem(password, username)) password = generateTemporaryPassword();
+    return password;
 }
 
 function toCurrentUser(row: typeof users.$inferSelect): CurrentUser {
@@ -98,6 +99,10 @@ export async function signIn(usernameInput: unknown, password: unknown, info: Re
 
     if (!row.is_active) {
         return fail(row.id, "account disabled", "This account has been disabled. Ask an administrator to enable it.");
+    }
+    // A session for an unknown role would be refused by every page, so say so now
+    if (!isRole(row.role)) {
+        return fail(row.id, `unknown role "${row.role}"`, "This account has no valid role. Ask an administrator to set one.");
     }
 
     await db.transaction(async (tx) => {
@@ -200,13 +205,13 @@ export async function createUser(actor: Actor, input: NewUserInput, info: Reques
     const username = normaliseUsername(input.username);
     const usernameError = usernameProblem(username);
     if (usernameError) throw new RequestError(usernameError);
-    const name = cleanName(input.name);
+    const name = requiredText(input.name, "Full name");
     const email = cleanEmail(input.email);
     if (!isRole(input.role)) throw new RequestError("Choose a role for the user.");
     const role = input.role;
 
     const provided = typeof input.password === "string" ? input.password : "";
-    const temporaryPassword = provided || generateTemporaryPassword();
+    const temporaryPassword = provided || temporaryPasswordFor(username);
     const problem = passwordProblem(temporaryPassword, username);
     if (problem) throw new RequestError(problem);
 
@@ -244,7 +249,7 @@ export async function updateUser(actor: Actor, id: number, input: UserUpdateInpu
     if (!row) throw new RequestError("User not found.", 404);
 
     const next: Partial<{ name: string; email: string | null; role: Role; is_active: boolean }> = {};
-    if (input.name !== undefined) next.name = cleanName(input.name);
+    if (input.name !== undefined) next.name = requiredText(input.name, "Full name");
     if (input.email !== undefined) next.email = cleanEmail(input.email);
     if (input.role !== undefined) {
         if (!isRole(input.role)) throw new RequestError("Unknown role.");
@@ -295,10 +300,12 @@ function describeUserChanges(changes: Record<string, { from: unknown; to: unknow
 
 // Gives the user a new temporary password, unlocks the account and signs them out everywhere
 export async function resetUserPassword(actor: Actor, id: number, info: RequestInfo) {
+    // It would sign the administrator out before they could note the temporary password
+    if (actor.id === id) throw new RequestError("To change your own password, use My account.");
     const [row] = await db.select().from(users).where(eq(users.id, id));
     if (!row) throw new RequestError("User not found.", 404);
 
-    const temporaryPassword = generateTemporaryPassword();
+    const temporaryPassword = temporaryPasswordFor(row.username);
     const passwordHash = await hashPassword(temporaryPassword);
     await db.transaction(async (tx) => {
         await tx.update(users)

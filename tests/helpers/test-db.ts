@@ -141,7 +141,9 @@ export async function resetDatabase(today: Date = new Date()) {
     const d = seedDates(today);
     const conn = await connectTestDb();
     try {
-        await conn.query(TABLES.map((t) => `TRUNCATE TABLE \`${t}\`;`).join("\n"));
+        // Ids restart at 1 because tests refer to them ("Invoice #7"). DELETE and resetting the counter is several
+        // times faster than TRUNCATE, which recreates every table's file.
+        await conn.query(TABLES.map((t) => `DELETE FROM \`${t}\`; ALTER TABLE \`${t}\` AUTO_INCREMENT = 1;`).join("\n"));
         const hash = await testPasswordHash();
         await conn.query(
             "INSERT INTO users (id, username, name, role, password_hash, is_active) VALUES ?",

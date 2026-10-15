@@ -58,6 +58,15 @@ describe("GET /api/reports/overview", () => {
         expect(body.current).toMatchObject({ revenue: 1900, invoices: 2, units_sold: 15, returns_value: 80, returns_count: 1 });
     });
 
+    it("leaves out returns on an invoice that was voided afterwards", async () => {
+        await post(saveReturn, "/api/expenses/save-return-expenses", {
+            return_type: "sale_reduction_expense_return", sale_id: 2, sale_product_name: "Curd Pot", sale_quantity: 1, sale_per_unit_amount: 1200, expense_per_unit_amount: 500, expense_date: "2026-10-13",
+        });
+        await post(voidSale, "/api/sales/2/void", { reason: "Cancelled" }, { params: { id: "2" } });
+        const { body } = await get(overview, `/api/reports/overview?${OCTOBER}`);
+        expect(body.current).toMatchObject({ returns_value: 0, returns_count: 0 });
+    });
+
     it("compares a custom range with the same number of days before it", async () => {
         const { body } = await get(overview, "/api/reports/overview?from=2026-10-10&to=2026-10-13");
         expect(body.previous).toMatchObject({ from: "2026-10-06", to: "2026-10-09" });

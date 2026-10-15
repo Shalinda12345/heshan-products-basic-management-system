@@ -4,11 +4,11 @@ import { useSearchParams } from 'next/navigation';
 import SectionNav, { type SectionTab } from '@/app/components/ui/section-nav';
 
 const TABS: SectionTab[] = [
-    { href: '/reports', label: 'Profit & Loss', icon: '📊', permission: 'reports.view' },
-    { href: '/reports/products', label: 'Products', icon: '📦', permission: 'reports.view' },
-    { href: '/reports/customers', label: 'Customers', icon: '🏪', permission: 'reports.view' },
-    { href: '/reports/expenses', label: 'Expenses', icon: '💸', permission: 'reports.view' },
-    { href: '/reports/stock', label: 'Stock Health', icon: '🏭', permission: 'reports.view' },
+    { href: '/reports', label: 'Profit & Loss', icon: '📊' },
+    { href: '/reports/products', label: 'Products', icon: '📦' },
+    { href: '/reports/customers', label: 'Customers', icon: '🏪' },
+    { href: '/reports/expenses', label: 'Expenses', icon: '💸' },
+    { href: '/reports/stock', label: 'Stock Health', icon: '🏭' },
 ];
 
 // Keeps the chosen period when moving between reports

@@ -9,9 +9,10 @@ import { isRole, type Role } from "./permissions";
 export const SESSION_COOKIE = "auth_token";
 export const SESSION_MAX_AGE_SECONDS = 60 * 60; // 1 hour of inactivity
 
-// Sent by automatic background refreshes (live stock, dashboard). The proxy does not treat them as
-// user activity, so a screen left open doesn't keep its session alive forever.
-export const BACKGROUND_REQUEST_HEADER = "x-background-refresh";
+// Why a request was refused; used by the proxy and by authorize() in auth.ts
+export const SESSION_ENDED_MESSAGE = "Your session has ended. Please sign in again.";
+export const FORBIDDEN_MESSAGE = "You do not have permission to do this.";
+export const PASSWORD_CHANGE_REQUIRED_MESSAGE = "Please choose a new password before continuing.";
 
 export interface SessionClaims {
     userId: number;
@@ -112,10 +113,6 @@ export async function readSessionToken(token: string | undefined, now = Date.now
     if (!(exp > now)) return null;
 
     return { userId: uid as number, version: ver as number, role, mustChangePassword: pwc === 1, expiresAt: exp };
-}
-
-export async function verifySessionToken(token: string | undefined): Promise<boolean> {
-    return (await readSessionToken(token)) !== null;
 }
 
 // True once less than half of a (valid) session's lifetime is left, so active users get a fresh

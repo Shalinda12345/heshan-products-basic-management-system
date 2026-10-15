@@ -1,8 +1,10 @@
-import { and, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, exists, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { activity_log, users } from "../db/schema";
-import { parseLocalDate } from "../lib/dates";
 import { ACTIVITY_ACTIONS, actionsInCategory, activityLabel, type ActivityAction, type ActivityCategory } from "../lib/activity";
+import { toCsv } from "../lib/csv";
+import { parseLocalDate } from "../lib/dates";
+import { likeContains } from "../lib/validation";
 
 export interface ActivityFilters {
     from?: string | null;
@@ -52,7 +54,7 @@ function conditions(filters: ActivityFilters): SQL | undefined {
     if (filters.attentionOnly) where.push(inArray(activity_log.action, ATTENTION_ACTIONS));
     const search = filters.search?.trim();
     if (search) {
-        const like = `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+        const like = likeContains(search);
         where.push(sql`(${activity_log.summary} LIKE ${like} OR ${activity_log.username} LIKE ${like})`);
     }
     return where.length ? and(...where) : undefined;
@@ -105,32 +107,23 @@ export async function listActivity(filters: ActivityFilters): Promise<{ rows: Ac
 // Everyone who appears in the log (for the "who" filter), with their current name
 export async function activityUsers(): Promise<{ user_id: number; username: string | null; name: string | null }[]> {
     const rows = await db
-        .selectDistinct({ user_id: activity_log.user_id, username: users.username, name: users.name })
-        .from(activity_log)
-        .innerJoin(users, eq(users.id, activity_log.user_id));
+        .select({ user_id: users.id, username: users.username, name: users.name })
+        .from(users)
+        .where(exists(db.select({ one: sql`1` }).from(activity_log).where(eq(activity_log.user_id, users.id))));
     return rows
         .map((row) => ({ user_id: Number(row.user_id), username: row.username, name: row.name }))
         .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 }
 
-function csvCell(value: unknown): string {
-    const text = value === null || value === undefined ? "" : String(value);
-    // Quote every cell; also defuse spreadsheet formulas in user-entered text
-    const safe = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
-    return `"${safe.replace(/"/g, '""')}"`;
-}
-
-// The log as CSV (with a byte-order mark so spreadsheet programs read the text as UTF-8)
+// The log as CSV, for spreadsheet programs
 export function activityCsv(rows: ActivityRow[]): string {
-    const header = ["Time (UTC)", "User", "Username", "Action", "Summary", "Record", "IP address"];
-    const lines = rows.map((row) => [
-        row.occurred_at.toISOString().replace("T", " ").slice(0, 19),
-        row.user_name ?? "",
-        row.username ?? "",
-        row.action_label,
-        row.summary,
-        row.entity_type ? `${row.entity_type} ${row.entity_id ?? ""}`.trim() : "",
-        row.ip_address ?? "",
-    ].map(csvCell).join(","));
-    return `\uFEFF${[header.map(csvCell).join(","), ...lines].join("\r\n")}\r\n`;
+    return toCsv(rows, [
+        { header: "Time (UTC)", value: (row) => row.occurred_at.toISOString().replace("T", " ").slice(0, 19) },
+        { header: "User", value: (row) => row.user_name ?? "" },
+        { header: "Username", value: (row) => row.username ?? "" },
+        { header: "Action", value: (row) => row.action_label },
+        { header: "Summary", value: (row) => row.summary },
+        { header: "Record", value: (row) => (row.entity_type ? `${row.entity_type} ${row.entity_id ?? ""}`.trim() : "") },
+        { header: "IP address", value: (row) => row.ip_address ?? "" },
+    ]);
 }

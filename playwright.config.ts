@@ -16,7 +16,7 @@ export default defineConfig({
     fullyParallel: false,
     forbidOnly: !!process.env.CI,
     reporter: [["list"], ["html", { open: "never" }]],
-    globalSetup: "./tests/e2e/global-setup.ts",
+    globalSetup: "./tests/helpers/global-setup.ts",
     use: {
         baseURL: `http://127.0.0.1:${PORT}`,
         // Uses the installed Microsoft Edge: no Playwright browser download needed

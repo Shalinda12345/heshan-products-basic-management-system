@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export type AlertVariant = 'success' | 'error' | 'warning' | 'info';
 
@@ -50,6 +50,16 @@ const variantConfig = {
         ),
     },
 };
+
+// A page's alert: show(...) opens it, and `alert` is rendered once somewhere in the page
+export function useAlert() {
+    const [state, setState] = useState<Omit<CustomAlertProps, 'onClose'>>({ isOpen: false, variant: 'info', title: '', message: '' });
+    const show = useCallback((variant: AlertVariant, title: string, message: string) => {
+        setState({ isOpen: true, variant, title, message });
+    }, []);
+    const close = useCallback(() => setState((prev) => ({ ...prev, isOpen: false })), []);
+    return { show, alert: <CustomAlert {...state} onClose={close} /> };
+}
 
 export default function CustomAlert({ isOpen, variant, title, message, onClose }: CustomAlertProps) {
     const config = variantConfig[variant];

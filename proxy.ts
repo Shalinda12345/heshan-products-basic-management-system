@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { BACKGROUND_REQUEST_HEADER } from "@/app/lib/background-request";
 import {
-    BACKGROUND_REQUEST_HEADER,
+    PASSWORD_CHANGE_REQUIRED_MESSAGE,
     SESSION_COOKIE,
     createSessionToken,
     readSessionToken,
@@ -60,7 +61,7 @@ export async function proxy(request: NextRequest) {
     }
 
     if (session.mustChangePassword && !PASSWORD_CHANGE_PATHS.has(pathname)) {
-        if (isApi) return NextResponse.json({ error: "Please choose a new password before continuing." }, { status: 403 });
+        if (isApi) return NextResponse.json({ error: PASSWORD_CHANGE_REQUIRED_MESSAGE }, { status: 403 });
         return NextResponse.redirect(new URL("/account", request.url));
     }
 

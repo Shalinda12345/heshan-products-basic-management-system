@@ -64,6 +64,12 @@ export function hasPermission(role: Role | null | undefined, permission: Permiss
     return !!role && (ROLE_PERMISSIONS[role]?.includes(permission) ?? false);
 }
 
+// Unit costs (and the margins and stock values built on them) are shown to those who see the reports or keep
+// the product list
+export function canSeeCosts(role: Role | null | undefined): boolean {
+    return hasPermission(role, "reports.view") || hasPermission(role, "masterdata.manage");
+}
+
 // ─── Pages ────────────────────────────────────────────────────────────────────
 
 // First matching rule wins. Pages without a rule only need a signed-in user.

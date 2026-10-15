@@ -2,10 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import AddSalesPopup from '@/app/components/sales/add-sales-popup';
 import SalesNavigation from '@/app/components/sales/sales-navigation';
-import SalesInvoicePage from '@/app/components/sales/sales-invoice';
-import CustomAlert, { AlertVariant } from '@/app/components/ui/custom-alert';
-import { responseErrorMessage } from '@/app/lib/fetch-error';
-import { backgroundFetch, useLiveRefresh } from '@/app/lib/use-live-refresh';
+import SalesInvoice from '@/app/components/sales/sales-invoice';
+import { useAlert } from '@/app/components/ui/custom-alert';
+import { apiGet, apiSend, errorMessage, isNetworkError } from '@/app/lib/api-client';
+import { formatMoney } from '@/app/lib/format';
+import { useLiveRefresh } from '@/app/lib/use-live-refresh';
 
 type SaleItem = {
   product_id: number;
@@ -34,57 +35,34 @@ export default function SalesPage() {
   const [customerName, setCustomerName] = useState("");
   const [saleDate, setSaleDate] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [alertState, setAlertState] = useState<{ isOpen: boolean; variant: AlertVariant; title: string; message: string }>({
-    isOpen: false,
-    variant: 'info',
-    title: '',
-    message: '',
-  });
+  const { show: showAlert, alert } = useAlert();
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
-
-  const showAlert = (variant: AlertVariant, title: string, message: string) => {
-    setAlertState({ isOpen: true, variant, title, message });
-  };
-
-  const closeAlert = () => {
-    setAlertState(prev => ({ ...prev, isOpen: false }));
-  };
 
   // Returns why the stock levels couldn't be loaded, or null once they are
   const fetchStock = async (): Promise<string | null> => {
     try {
-      const response = await backgroundFetch("/api/stock");
-
-      if (!response.ok) {
-        return await responseErrorMessage(response, "The product list could not be loaded. Refresh the page to try again.");
-      }
-
-      const data: StockItem[] = await response.json();
+      const data = await apiGet<StockItem[]>("/api/stock", { background: true });
       // Inactive products are no longer sold
       setStockItems(data.filter((item) => item.is_active !== false));
       return null;
     } catch (error) {
-      console.error("Error fetching stock:", error);
-      return "Could not reach the server. Refresh the page to try again.";
+      return errorMessage(error);
     }
   };
 
   useEffect(() => {
     async function loadData() {
-      setLoading(true);
       const problem = await fetchStock();
       setLoading(false);
       // Without stock levels there are no products to sell, so say why
-      if (problem) {
-        setAlertState({ isOpen: true, variant: 'error', title: 'Could Not Load Products', message: problem });
-      }
+      if (problem) showAlert('error', 'Could Not Load Products', problem);
     }
 
     loadData();
-  }, []);
+  }, [showAlert]);
 
-  // Keep available quantities current while other people sell or receive stock
-  useLiveRefresh(fetchStock, 10000, !loading);
+  // While the product picker is open, keep its quantities current as other people sell or receive stock
+  useLiveRefresh(fetchStock, 10000, isPopupOpen && !loading);
 
   const stock = stockItems.find(
     (item) => item.product_name === productName
@@ -163,49 +141,27 @@ export default function SalesPage() {
     setIsSubmitting(true);
 
     try {
-      // 1. Calculate the total value from our tracked items list
-      const grandTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
-
-      // 2. Format payloads to match what your InsertSales service properties expect
-      const formattedItems = saleItems.map(item => ({
-        product_id: item.product_id || undefined,
-        product_name: item.product_name,
-        quantity: item.quantity,
-        selling_price: item.selling_price,
-        total: item.total
-      }));
-
-      const response = await fetch("/api/sales/save-sales", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          customer_name: customerName,
-          sale_date: saleDate,
-          grand_total: grandTotal,
-          items: formattedItems,
-        }),
+      // The server works out the line totals and the grand total itself
+      const result = await apiSend<{ sale_id: number }>("/api/sales/save-sales", "POST", {
+        customer_name: customerName,
+        sale_date: saleDate,
+        items: saleItems.map((item) => ({
+          product_id: item.product_id || undefined,
+          product_name: item.product_name,
+          quantity: item.quantity,
+          selling_price: item.selling_price,
+        })),
       });
+      showAlert('success', 'Invoice Posted', `Invoice #${result.sale_id} for ${customerName} has been saved and the stock updated.`);
 
-      const result = await response.json();
+      setSaleItems([]);
+      setCustomerName("");
+      setSaleDate("");
 
-      if (response.ok && result.success) {
-        showAlert('success', 'Invoice Posted', `Invoice #${result.sale_id} for ${customerName} has been saved and the stock updated.`);
-
-        // Clear local states on success
-        setSaleItems([]);
-        setCustomerName("");
-        setSaleDate("");
-
-        // Re-fetch stock to ensure next sale checks against accurate quantities
-        await fetchStock();
-      } else {
-        showAlert('error', 'Save Failed', result.message || 'Failed to save data to the database.');
-      }
+      // Check the next sale against the new quantities
+      await fetchStock();
     } catch (error) {
-      console.error("Network connection error saving sale:", error);
-      showAlert('error', 'Network Error', 'A network connection error occurred. Please try again.');
+      showAlert('error', isNetworkError(error) ? 'Network Error' : 'Save Failed', errorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -214,13 +170,7 @@ export default function SalesPage() {
   return (
     <main className="page-wrapper">
       <div className="page-glow" />
-      <CustomAlert
-        isOpen={alertState.isOpen}
-        variant={alertState.variant}
-        title={alertState.title}
-        message={alertState.message}
-        onClose={closeAlert}
-      />
+      {alert}
       <SalesNavigation />
       <div className="page-content max-w-7xl mx-auto space-y-8 py-10 px-4 sm:px-6 lg:px-8">
 
@@ -266,7 +216,7 @@ export default function SalesPage() {
                   Product Name
                 </label>
                 {loading ? (
-                  <p className="text-slate-500 py-3 text-sm animate-pulse">Loading product inventory...</p>
+                  <p className="text-slate-500 py-3 text-sm animate-pulse">Loading products...</p>
                 ) : (
                   <select
                     value={productName}
@@ -331,7 +281,7 @@ export default function SalesPage() {
                 <div className="p-3.5 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100/50 dark:border-blue-900/30 rounded-xl flex items-center justify-between text-sm">
                   <span className="text-slate-500 dark:text-slate-400">Subtotal Preview:</span>
                   <span className="font-bold text-blue-600 dark:text-blue-400">
-                    Rs. {(quantityPerProduct * sellingPricePerProduct).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {formatMoney(quantityPerProduct * sellingPricePerProduct)}
                   </span>
                 </div>
               )}
@@ -357,7 +307,7 @@ export default function SalesPage() {
 
         {/* Main Content Card */}
         <div className="glass-card rounded-2xl p-6 sm:p-8">
-          <SalesInvoicePage
+          <SalesInvoice
             items={saleItems}
             onRemoveItem={removeItem}
             customerName={customerName}

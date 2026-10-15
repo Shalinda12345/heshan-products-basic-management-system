@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GET as authCheck } from "@/app/api/auth/check/route";
 import { POST as changePassword } from "@/app/api/account/password/route";
 import { GET as stockList } from "@/app/api/stock/route";
+import { landingPath, type CurrentUser } from "@/app/lib/auth";
 import { createSessionToken, readSessionToken } from "@/app/lib/session";
 import { LOCKOUT_MINUTES, MAX_FAILED_LOGINS, signIn } from "@/app/services/users";
 import { TODAY } from "../helpers/clock";
@@ -72,6 +73,25 @@ describe("signing in", () => {
     });
 });
 
+describe("where sign-in leads", () => {
+    const user = (role: CurrentUser["role"]): CurrentUser => ({ id: 1, username: "u", name: "U", email: null, role, mustChangePassword: false, sessionVersion: 1 });
+
+    it("goes back to the page that was asked for", () => {
+        expect(landingPath(user("manager"), "/pages/sales/invoices?status=void")).toBe("/pages/sales/invoices?status=void");
+    });
+
+    it.each(["//evil.example", "/\\evil.example", "/\t/evil.example", "/\n/evil.example", "https://evil.example", "/login", "/api/stock"])(
+        "never leaves the site or lands on %j",
+        (requested) => {
+            expect(landingPath(user("admin"), requested)).toBe("/");
+        }
+    );
+
+    it("checks the page the browser would really open", () => {
+        expect(landingPath(user("staff"), "/pages/sales/../../admin/users")).toBe("/pages/sales");
+    });
+});
+
 describe("API sessions are checked against the database", () => {
     it("refuses requests without a session", async () => {
         const { status, body } = await get(stockList, "/api/stock", { as: null });
@@ -100,6 +120,13 @@ describe("API sessions are checked against the database", () => {
         const token = await createSessionToken({ userId: 1, version: 1, role: "admin", mustChangePassword: true });
         const { status } = await call(stockList, "/api/stock", { headers: { cookie: `auth_token=${token}` } }, { as: null });
         expect(status).toBe(403);
+    });
+});
+
+describe("a malformed session cookie", () => {
+    it("counts as signed out rather than a server error", async () => {
+        const response = await call(stockList, "/api/stock", { headers: { cookie: "auth_token=%E0%A4%A" } }, { as: null });
+        expect(response.status).toBe(401);
     });
 });
 

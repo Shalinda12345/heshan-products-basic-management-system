@@ -1,16 +1,16 @@
-import { asc, eq } from "drizzle-orm";
-import { db, type DbExecutor } from "../db";
-import { products, sales, sale_items } from "../db/schema";
+import { db } from "../db";
+import { sales, sale_items } from "../db/schema";
 import { RequestError } from "../lib/api-error";
 import { formatMoney, formatQty } from "../lib/format";
 import { roundMoney } from "../lib/money";
-import { parseLocalDate } from "../lib/dates";
+import { isIsoDate, parseLocalDate } from "../lib/dates";
+import { AMOUNT_LIMIT } from "../lib/validation";
 import { applyStockMovement } from "./stockLedger";
 import { logActivity, type Actor, type RequestInfo } from "./activity";
 import { findCustomer, findCustomerByName } from "./customers";
-import { findProduct, type Product } from "./products";
+import { findProduct, findProductByName, type Product } from "./products";
 
-interface SaleItemInput{
+interface SaleItemInput {
     product_id?: number;
     product_name: string;
     quantity: number;
@@ -18,7 +18,7 @@ interface SaleItemInput{
     total?: number; // ignored: recomputed from quantity × selling_price
 }
 
-interface CreateSaleInput{
+export interface CreateSaleInput {
     customer_id?: number;
     customer_name: string;
     sale_date: string;
@@ -26,34 +26,38 @@ interface CreateSaleInput{
     items: SaleItemInput[];
 }
 
-async function productByName(executor: DbExecutor, name: string): Promise<Product | null> {
-    const [row] = await executor.select({ product_id: products.product_id }).from(products)
-        .where(eq(products.product_name, name)).orderBy(asc(products.product_id)).limit(1);
-    return row ? findProduct(executor, Number(row.product_id)) : null;
-}
-
 export async function InsertSales(data: CreateSaleInput, actor: Actor | null = null, info?: RequestInfo) {
-    if (!data.customer_name || !data.customer_name.trim()) {
-        throw new Error("Customer name is required.");
+    if (typeof data.customer_name !== "string" || !data.customer_name.trim()) {
+        throw new RequestError("Customer name is required.");
     }
 
     if (!data.sale_date) {
-        throw new Error("Sale date is required.");
+        throw new RequestError("Sale date is required.");
+    }
+    if (!isIsoDate(data.sale_date)) {
+        throw new RequestError("Sale date must be a valid date (YYYY-MM-DD).");
     }
 
-    if (!data.items || data.items.length === 0) {
-        throw new Error("Invoice must contain at least one item.");
+    if (!Array.isArray(data.items) || data.items.length === 0) {
+        throw new RequestError("Invoice must contain at least one item.");
     }
 
-    for (const item of data.items) {
-        if (!item.product_name || !item.product_name.trim()) {
-            throw new Error("Product name is required for all sale items.");
+    for (const item of data.items as unknown[]) {
+        const line = (item ?? {}) as Partial<SaleItemInput>;
+        if (typeof line.product_name !== "string" || !line.product_name.trim()) {
+            throw new RequestError("Product name is required for all sale items.");
         }
-        if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0) {
-            throw new Error(`Quantity must be greater than 0 for "${item.product_name}".`);
+        const quantity = Number(line.quantity);
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+            throw new RequestError(`Quantity must be greater than 0 for "${line.product_name}".`);
         }
-        if (item.selling_price === undefined || !Number.isFinite(Number(item.selling_price)) || Number(item.selling_price) < 0) {
-            throw new Error(`Selling price cannot be negative for "${item.product_name}".`);
+        const price = Number(line.selling_price);
+        if (line.selling_price === undefined || line.selling_price === null || !Number.isFinite(price) || price < 0) {
+            throw new RequestError(`Selling price cannot be negative for "${line.product_name}".`);
+        }
+        // The amount columns hold values below AMOUNT_LIMIT
+        if (quantity >= AMOUNT_LIMIT || price >= AMOUNT_LIMIT || roundMoney(quantity * price) >= AMOUNT_LIMIT) {
+            throw new RequestError(`The quantity or price of "${line.product_name}" is too large.`);
         }
     }
 
@@ -68,6 +72,7 @@ export async function InsertSales(data: CreateSaleInput, actor: Actor | null = n
         total: roundMoney(Number(item.quantity) * Number(item.selling_price)),
     }));
     const grandTotal = roundMoney(itemRows.reduce((sum, item) => sum + item.total, 0));
+    if (grandTotal >= AMOUNT_LIMIT) throw new RequestError("The invoice total is too large.");
 
     return await db.transaction(async (tx) => {
         // The customer must be on the customer list (and still active)
@@ -85,19 +90,21 @@ export async function InsertSales(data: CreateSaleInput, actor: Actor | null = n
         // Each line's product, found by id when the form sent one
         const lines: (typeof itemRows[number] & { product: Product })[] = [];
         for (const item of itemRows) {
-            const product = item.product_id ? await findProduct(tx, item.product_id) : await productByName(tx, item.product_name);
+            const product = item.product_id ? await findProduct(tx, item.product_id) : await findProductByName(tx, item.product_name);
             if (!product) {
-                throw new Error(
-                    `Product "${item.product_name}" not found in the products table. Stock deduction aborted.`
-                );
+                throw new RequestError(`Product "${item.product_name}" not found in the products table. Stock deduction aborted.`);
             }
             if (!product.is_active) {
                 throw new RequestError(`Product "${product.product_name}" is no longer sold (inactive).`);
             }
+            // Returns and voids work on one line per product, so a product appears on an invoice once
+            if (lines.some((line) => line.product_id === product.product_id)) {
+                throw new RequestError(`"${product.product_name}" is on the invoice more than once. Put it on one line with the total quantity.`);
+            }
             lines.push({ ...item, product_id: product.product_id, product_name: product.product_name, product });
         }
 
-        const [SaleResult] = await tx.insert(sales).values({
+        const [saleResult] = await tx.insert(sales).values({
             customer_id: customer.customer_id,
             customer_name: customer.customer_name,
             sale_date: saleDateObj,
@@ -105,7 +112,7 @@ export async function InsertSales(data: CreateSaleInput, actor: Actor | null = n
             created_by: actor?.id ?? null,
         });
 
-        const newSaleId = SaleResult.insertId;
+        const newSaleId = saleResult.insertId;
 
         const itemsPayload = lines.map(({ product_id, product_name, quantity, selling_price, total }) => ({
             sale_id: newSaleId, product_id, product_name, quantity, selling_price, total,
@@ -126,8 +133,6 @@ export async function InsertSales(data: CreateSaleInput, actor: Actor | null = n
                 createdBy: actor?.id ?? null,
                 messages: {
                     noStockRow: `No stock record found for "${item.product_name}". Cannot sell a product with no stock.`,
-                    insufficient: (available) =>
-                        `Insufficient stock for "${item.product_name}". Available: ${available}, Requested: ${item.quantity}`,
                 },
             });
         }

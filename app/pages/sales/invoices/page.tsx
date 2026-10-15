@@ -4,11 +4,11 @@ import React, { useState } from 'react';
 import SalesNavigation from '@/app/components/sales/sales-navigation';
 import { usePermissions } from '@/app/components/auth/user-provider';
 import { PageHeader, PageShell, Card, LoadingRows, TableMessage, tableClasses as t } from '@/app/components/ui/page-shell';
-import { Button, filterClass } from '@/app/components/ui/form';
+import { Button, StatusFilter, filterClass, type StatusChoice } from '@/app/components/ui/form';
 import { DocumentStatusBadge, Notice } from '@/app/components/ui/feedback';
-import Pagination from '@/app/components/ui/pagination';
+import Pagination, { withPageReset } from '@/app/components/ui/pagination';
 import VoidDialog from '@/app/components/ui/void-dialog';
-import { apiGet, errorMessage, queryString } from '@/app/lib/api-client';
+import { apiGet, errorMessage, fetchAllPages, queryString } from '@/app/lib/api-client';
 import { downloadCsv } from '@/app/lib/csv';
 import { formatAmount, formatDate, formatDateTime, formatMoney, formatQty } from '@/app/lib/format';
 import { presetRange } from '@/app/lib/periods';
@@ -51,7 +51,7 @@ export default function InvoicesPage() {
     const [from, setFrom] = useState(month.from);
     const [to, setTo] = useState(month.to);
     const [customerId, setCustomerId] = useState('');
-    const [status, setStatus] = useState<'all' | 'posted' | 'void'>('all');
+    const [status, setStatus] = useState<StatusChoice>('all');
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
     const [expanded, setExpanded] = useState<number | null>(null);
@@ -64,10 +64,7 @@ export default function InvoicesPage() {
     const invoices = useResource<InvoicePage>(`/api/sales/invoices${queryString({ ...filters, page, page_size: PAGE_SIZE })}`);
     const customers = useResource<{ customer_id: number; customer_name: string }[]>('/api/customers?include_inactive=1');
 
-    const update = <T,>(setter: (value: T) => void) => (value: T) => {
-        setter(value);
-        setPage(1);
-    };
+    const update = withPageReset(setPage);
 
     const toggle = async (invoice: Invoice) => {
         if (expanded === invoice.sale_id) {
@@ -88,12 +85,7 @@ export default function InvoicesPage() {
     const exportCsv = async () => {
         setExporting(true);
         try {
-            const all: Invoice[] = [];
-            for (let p = 1; p <= 50; p++) {
-                const result = await apiGet<InvoicePage>(`/api/sales/invoices${queryString({ ...filters, page: p, page_size: 200 })}`);
-                all.push(...result.rows);
-                if (all.length >= result.total || result.rows.length === 0) break;
-            }
+            const all = await fetchAllPages<Invoice>('/api/sales/invoices', filters);
             downloadCsv(`invoices-${from || 'all'}-to-${to || 'all'}.csv`, all, [
                 { header: 'Invoice', value: (r) => r.sale_id },
                 { header: 'Date', value: (r) => r.sale_date },
@@ -129,11 +121,7 @@ export default function InvoicesPage() {
                     <option value="">All customers</option>
                     {(customers.data ?? []).map((c) => <option key={c.customer_id} value={c.customer_id}>{c.customer_name}</option>)}
                 </select>
-                <select aria-label="Status" value={status} onChange={(e) => update(setStatus)(e.target.value as 'all' | 'posted' | 'void')} className={filterClass}>
-                    <option value="all">Posted &amp; void</option>
-                    <option value="posted">Posted only</option>
-                    <option value="void">Void only</option>
-                </select>
+                <StatusFilter value={status} onChange={update(setStatus)} />
                 <input type="search" aria-label="Search" placeholder="Invoice # or customer…" value={search} onChange={(e) => update(setSearch)(e.target.value)} className={`${filterClass} w-56`} />
             </div>
 

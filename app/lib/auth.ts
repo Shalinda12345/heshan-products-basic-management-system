@@ -5,7 +5,14 @@ import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { users } from "../db/schema";
-import { SESSION_COOKIE, readSessionToken, type SessionClaims } from "./session";
+import {
+    FORBIDDEN_MESSAGE,
+    PASSWORD_CHANGE_REQUIRED_MESSAGE,
+    SESSION_COOKIE,
+    SESSION_ENDED_MESSAGE,
+    readSessionToken,
+    type SessionClaims,
+} from "./session";
 import { canOpenPage, hasPermission, homePathFor, isRole, permissionsFor, type Permission, type Role } from "./permissions";
 import { toReadErrorResponse } from "./api-error";
 import type { Actor } from "../services/activity";
@@ -52,19 +59,33 @@ export function sessionClaims(user: CurrentUser): SessionClaims {
 // Where to go after signing in: the page the user asked for, if it's a page on this site their role can open
 export function landingPath(user: CurrentUser, requested?: string | null): string {
     if (user.mustChangePassword) return "/account";
+    const home = homePathFor(user.role);
     const path = requested ?? "";
-    const isLocalPath = path.startsWith("/") && !path.startsWith("//") && !path.startsWith("/\\");
-    if (isLocalPath && !path.startsWith("/login") && !path.startsWith("/api/") && canOpenPage(user.role, path.split(/[?#]/)[0])) {
-        return path;
+    if (!path.startsWith("/")) return home;
+    // Read the path the way a browser will (which drops tabs and line breaks and treats "\" as "/"),
+    // so nothing like "/\t/other-site.example" can lead off this site
+    let url: URL;
+    try {
+        url = new URL(path, "http://this-site.invalid");
+    } catch {
+        return home;
     }
-    return homePathFor(user.role);
+    if (url.origin !== "http://this-site.invalid") return home;
+    if (url.pathname.startsWith("/login") || url.pathname.startsWith("/api/") || !canOpenPage(user.role, url.pathname)) return home;
+    return `${url.pathname}${url.search}${url.hash}`;
 }
 
 export function cookieFromHeader(cookieHeader: string | null, name: string): string | undefined {
     for (const part of cookieHeader?.split(";") ?? []) {
         const separator = part.indexOf("=");
         if (separator > 0 && part.slice(0, separator).trim() === name) {
-            return decodeURIComponent(part.slice(separator + 1).trim());
+            const value = part.slice(separator + 1).trim();
+            try {
+                return decodeURIComponent(value);
+            } catch {
+                // Not valid percent-encoding: it can't be one of our tokens, so the session check simply fails
+                return value;
+            }
         }
     }
     return undefined;
@@ -103,10 +124,6 @@ export async function userForToken(token: string | undefined): Promise<CurrentUs
 }
 
 export type AuthResult = { ok: true; user: CurrentUser } | { ok: false; response: Response };
-
-export const SESSION_ENDED_MESSAGE = "Your session has ended. Please sign in again.";
-export const FORBIDDEN_MESSAGE = "You do not have permission to do this.";
-export const PASSWORD_CHANGE_REQUIRED_MESSAGE = "Please choose a new password before continuing.";
 
 // Error bodies follow the routes' existing convention: reads answer { error }, writes { success: false, message, error }
 function deny(request: Request, status: number, message: string): { ok: false; response: Response } {

@@ -85,6 +85,10 @@ describe("GET /api/dashboard/summary", () => {
         expect(body.uniqueCustomers).toBe(14);
     });
 
+    it.each(["period=fortnight", "period=multi&years=abc", "period=month&year=2026&month=13"])("refuses %s with 400", async (search) => {
+        expect((await get(dashboard, `/api/dashboard/summary?${search}`)).status).toBe(400);
+    });
+
     it("is never cached", async () => {
         const { headers } = await get(dashboard, "/api/dashboard/summary?period=month");
         expect(headers.get("cache-control")).toContain("no-store");

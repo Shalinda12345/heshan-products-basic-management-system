@@ -109,6 +109,14 @@ describe("POST /api/sales/save-sales", () => {
         ["a non-numeric quantity", { items: [{ product_name: "Yogurt", quantity: "two", selling_price: 1 }] }, 'Quantity must be greater than 0 for "Yogurt".'],
         ["a negative price", { items: [{ product_name: "Yogurt", quantity: 1, selling_price: -5 }] }, 'Selling price cannot be negative for "Yogurt".'],
         ["a missing price", { items: [{ product_name: "Yogurt", quantity: 1 }] }, 'Selling price cannot be negative for "Yogurt".'],
+        ["an impossible date", { sale_date: "2026-13-45" }, "Sale date must be a valid date (YYYY-MM-DD)."],
+        ["a date that isn't a date", { sale_date: "next tuesday" }, "Sale date must be a valid date (YYYY-MM-DD)."],
+        ["a customer name that isn't text", { customer_name: 123 }, "Customer name is required."],
+        ["items that aren't a list", { items: { product_name: "Yogurt" } }, "Invoice must contain at least one item."],
+        ["a line that isn't an item", { items: [null] }, "Product name is required for all sale items."],
+        ["a price too large to store", { items: [{ product_name: "Yogurt", quantity: 1, selling_price: 1e9 }] }, 'The quantity or price of "Yogurt" is too large.'],
+        ["the same product on two lines", { items: [{ product_name: "Yogurt", quantity: 1, selling_price: 80 }, { product_id: 2, product_name: "Yogurt", quantity: 2, selling_price: 80 }] },
+            '"Yogurt" is on the invoice more than once. Put it on one line with the total quantity.'],
     ])("rejects %s with a clear message and writes nothing", async (_label, overrides, message) => {
         const before = await snapshot();
         const { status, body } = await post(saveSale, "/api/sales/save-sales", invoice(overrides));

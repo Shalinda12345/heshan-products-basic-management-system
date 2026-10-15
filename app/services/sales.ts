@@ -1,23 +1,32 @@
 import { and, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
-import { alias } from "drizzle-orm/mysql-core";
 import { db } from "../db";
-import { products, sales, sale_items, users } from "../db/schema";
+import { sales, sale_items } from "../db/schema";
 import { RequestError } from "../lib/api-error";
-import { parseLocalDate } from "../lib/dates";
+import { parseLocalDate, startOfDay } from "../lib/dates";
 import { formatMoney, formatQty } from "../lib/format";
-import { requiredText } from "../lib/validation";
+import { roundMoney } from "../lib/money";
+import { likeContains } from "../lib/validation";
 import { logActivity, type Actor, type RequestInfo } from "./activity";
-import { findProduct } from "./products";
+import { createdByUser, postedTotals, voidedByUser, voidedColumns, voidReason } from "./documents";
+import { findProduct, findProductByName } from "./products";
 import { applyStockMovement } from "./stockLedger";
 
 // Only posted invoices count in totals and reports; voided ones are kept for the record
 export const postedSale = eq(sales.status, "posted");
 
+// The posted invoices dated from `start` to `end`, newest first (the daily, weekly and monthly sales pages)
+export function postedSalesBetween(start: Date, end: Date) {
+    return db
+        .select()
+        .from(sales)
+        .where(and(gte(sales.sale_date, start), lte(sales.sale_date, end), postedSale))
+        .orderBy(desc(sales.sale_date));
+}
+
 // Voids an invoice: puts what is left on it back into stock and takes it out of every total.
 // The invoice stays on file, marked void, with the reason and who voided it.
 export async function voidSale(actor: Actor, saleId: number, reasonInput: unknown, info: RequestInfo) {
-    const reason = requiredText(reasonInput, "A reason for voiding");
-    if (reason.length < 3) throw new RequestError("Please give a short reason for voiding this invoice.");
+    const reason = voidReason(reasonInput, "invoice");
 
     return db.transaction(async (tx) => {
         const [sale] = await tx.select().from(sales).where(eq(sales.sale_id, saleId)).for("update");
@@ -25,18 +34,13 @@ export async function voidSale(actor: Actor, saleId: number, reasonInput: unknow
         if (sale.status === "void") throw new RequestError(`Invoice #${saleId} is already void.`, 409);
 
         const items = await tx.select().from(sale_items).where(eq(sale_items.sale_id, saleId)).for("update");
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
 
         const restored: { product_name: string; quantity: number }[] = [];
         for (const item of items) {
             const quantity = Number(item.quantity);
             if (quantity <= 0) continue; // fully returned already
-            let product = item.product_id ? await findProduct(tx, Number(item.product_id)) : null;
-            if (!product) {
-                const [byName] = await tx.select({ product_id: products.product_id }).from(products).where(eq(products.product_name, item.product_name)).limit(1);
-                product = byName ? await findProduct(tx, Number(byName.product_id)) : null;
-            }
+            const product = (item.product_id ? await findProduct(tx, Number(item.product_id)) : null)
+                ?? await findProductByName(tx, item.product_name);
             if (!product) {
                 throw new RequestError(`Cannot put "${item.product_name}" back into stock: the product no longer exists.`, 409);
             }
@@ -45,7 +49,7 @@ export async function voidSale(actor: Actor, saleId: number, reasonInput: unknow
                 productName: product.product_name,
                 movementType: "sale_void",
                 quantity,
-                movementDate: today,
+                movementDate: startOfDay(),
                 reference: `Sale #${saleId}`,
                 note: `Invoice voided: ${reason}`.slice(0, 255),
                 createdBy: actor.id,
@@ -53,9 +57,7 @@ export async function voidSale(actor: Actor, saleId: number, reasonInput: unknow
             restored.push({ product_name: product.product_name, quantity });
         }
 
-        await tx.update(sales)
-            .set({ status: "void", void_reason: reason.slice(0, 255), voided_at: new Date(), voided_by: actor.id })
-            .where(eq(sales.sale_id, saleId));
+        await tx.update(sales).set(voidedColumns(actor, reason)).where(eq(sales.sale_id, saleId));
 
         await logActivity(tx, actor, {
             action: "sale.void",
@@ -85,9 +87,6 @@ export interface InvoiceFilters {
     pageSize: number;
 }
 
-const createdByUser = alias(users, "created_by_user");
-const voidedByUser = alias(users, "voided_by_user");
-
 // The invoice register: one page of invoices, newest first, with the total of the posted ones across all pages
 export async function listInvoices(filters: InvoiceFilters) {
     const where: SQL[] = [];
@@ -100,7 +99,7 @@ export async function listInvoices(filters: InvoiceFilters) {
         const asId = Number(search);
         where.push(Number.isInteger(asId) && asId > 0
             ? eq(sales.sale_id, asId)
-            : sql`${sales.customer_name} LIKE ${`%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`}`);
+            : sql`${sales.customer_name} LIKE ${likeContains(search)}`);
     }
     const condition = where.length ? and(...where) : undefined;
 
@@ -126,11 +125,7 @@ export async function listInvoices(filters: InvoiceFilters) {
             .orderBy(desc(sales.sale_date), desc(sales.sale_id))
             .limit(filters.pageSize)
             .offset((filters.page - 1) * filters.pageSize),
-        db.select({
-            count: sql<number>`COUNT(*)`,
-            posted_count: sql<number>`COALESCE(SUM(CASE WHEN ${sales.status} = 'posted' THEN 1 ELSE 0 END), 0)`,
-            posted_total: sql<number>`COALESCE(SUM(CASE WHEN ${sales.status} = 'posted' THEN ${sales.grand_total} ELSE 0 END), 0)`,
-        }).from(sales).where(condition),
+        db.select(postedTotals(postedSale, sales.grand_total)).from(sales).where(condition),
     ]);
 
     return {
@@ -143,6 +138,6 @@ export async function listInvoices(filters: InvoiceFilters) {
         total: Number(summary.count),
         page: filters.page,
         page_size: filters.pageSize,
-        totals: { posted_count: Number(summary.posted_count), posted_amount: Math.round(Number(summary.posted_total) * 100) / 100 },
+        totals: { posted_count: Number(summary.posted_count), posted_amount: roundMoney(Number(summary.posted_total)) },
     };
 }

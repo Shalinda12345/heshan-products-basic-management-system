@@ -1,18 +1,28 @@
 import { and, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
-import { alias } from "drizzle-orm/mysql-core";
 import { db, type DbTransaction } from "../db";
-import { expenses, products, returns, sales, sale_items, stocks, users } from "../db/schema";
+import { expenses, products, returns, sales, sale_items, stocks } from "../db/schema";
 import { RequestError } from "../lib/api-error";
-import { isoDateFromDb, parseLocalDate } from "../lib/dates";
+import { isIsoDate, isoDateFromDb, parseLocalDate, startOfDay } from "../lib/dates";
 import { formatMoney, formatQty } from "../lib/format";
 import { roundMoney } from "../lib/money";
 import { RETURN_TYPES, isReturnType, returnTypeLabel, type ReturnType } from "../lib/returns";
-import { requiredText } from "../lib/validation";
+import { AMOUNT_LIMIT } from "../lib/validation";
 import { logActivity, type Actor, type RequestInfo } from "./activity";
+import { createdByUser, voidedByUser, voidedColumns, voidReason } from "./documents";
+import { postedExpense } from "./expenses";
+import { findProduct } from "./products";
 import { applyStockMovement } from "./stockLedger";
+
+// Only posted returns count in totals and reports; voided ones are kept for the record
+export const postedReturn = eq(returns.status, "posted");
 
 function isPositive(value: unknown): boolean {
     return Number.isFinite(Number(value)) && Number(value) > 0;
+}
+
+// Quantities, rates and totals are stored as DOUBLE(10,2), which holds values below AMOUNT_LIMIT
+function assertStorable(...values: number[]) {
+    if (values.some((value) => value >= AMOUNT_LIMIT)) throw new RequestError("The quantity or amount is too large.");
 }
 
 export interface ReturnInput {
@@ -43,8 +53,8 @@ export interface ReturnResult {
 async function lockSaleLine(tx: DbTransaction, saleId: number, productName: string) {
     // Sale and line rows are locked until commit so concurrent returns can't over-return
     const [currentSale] = await tx.select().from(sales).where(eq(sales.sale_id, saleId)).for("update");
-    if (!currentSale) throw new Error(`Sale ID ${saleId} not found.`);
-    if (currentSale.status === "void") throw new Error(`Sale #${saleId} has been voided, so it can't take returns.`);
+    if (!currentSale) throw new RequestError(`Sale ID ${saleId} not found.`);
+    if (currentSale.status === "void") throw new RequestError(`Sale #${saleId} has been voided, so it can't take returns.`);
 
     const [saleItem] = await tx
         .select()
@@ -52,7 +62,7 @@ async function lockSaleLine(tx: DbTransaction, saleId: number, productName: stri
         .where(eq(sale_items.sale_id, saleId))
         .for("update")
         .then((rows) => rows.filter((r) => r.product_name === productName));
-    if (!saleItem) throw new Error(`No sale item matching "${productName}" found in Sale #${saleId}.`);
+    if (!saleItem) throw new RequestError(`No sale item matching "${productName}" found in Sale #${saleId}.`);
 
     return { currentSale, saleItem };
 }
@@ -63,12 +73,12 @@ async function reduceSale(tx: DbTransaction, saleId: number, productName: string
 
     const existingQty = Number(saleItem.quantity);
     if (returnQty > existingQty) {
-        throw new Error(`Cannot return ${returnQty} units — only ${existingQty} were sold in this transaction.`);
+        throw new RequestError(`Cannot return ${returnQty} units — only ${existingQty} were sold in this transaction.`);
     }
 
     const returnLineTotal = roundMoney(returnQty * unitPrice);
     if (returnLineTotal > Number(saleItem.total)) {
-        throw new Error(`Return amount Rs. ${returnLineTotal.toFixed(2)} exceeds the Rs. ${Number(saleItem.total).toFixed(2)} remaining for "${productName}" in Sale #${saleId}.`);
+        throw new RequestError(`Return amount Rs. ${returnLineTotal.toFixed(2)} exceeds the Rs. ${Number(saleItem.total).toFixed(2)} remaining for "${productName}" in Sale #${saleId}.`);
     }
 
     const newSaleItemQty = Math.max(0, existingQty - returnQty);
@@ -93,8 +103,9 @@ export async function createReturn(input: ReturnInput, actor: Actor | null, info
     // Totals are always derived from quantity × per-unit amount; client-sent totals are ignored
     if (!isReturnType(return_type)) throw new RequestError("Invalid or missing return_type.");
     if (!expense_date) throw new RequestError("expense_date is required.");
+    if (!isIsoDate(expense_date)) throw new RequestError("expense_date must be a valid date (YYYY-MM-DD).");
 
-    const parsedDate = parseLocalDate(String(expense_date));
+    const parsedDate = parseLocalDate(expense_date);
     const createdBy = actor?.id ?? null;
 
     // ── Stock expense return: reduce stock and record an expense ──────────────
@@ -105,10 +116,16 @@ export async function createReturn(input: ReturnInput, actor: Actor | null, info
         const qty = Number(quantity);
         const rate = Number(per_unit_amount);
         const returnTotal = roundMoney(qty * rate);
+        assertStorable(qty, rate, returnTotal);
 
         return db.transaction(async (tx) => {
+            // Stock is taken from product_id, so the records name that product (not whatever name was sent)
+            const product = Number.isInteger(Number(product_id)) ? await findProduct(tx, Number(product_id)) : null;
+            if (!product) throw new RequestError(`No stock record found for product ID ${product_id}.`);
+            const productName = product.product_name;
+
             const [expenseResult] = await tx.insert(expenses).values({
-                expense_name: `Stock Expense Return: ${product_name}`,
+                expense_name: `Stock Expense Return: ${productName}`,
                 quantity: qty,
                 per_expense_amount: rate,
                 total: returnTotal,
@@ -119,8 +136,8 @@ export async function createReturn(input: ReturnInput, actor: Actor | null, info
 
             // Deduct stock (validated and locked) and log it in the stock ledger
             const movement = await applyStockMovement(tx, {
-                productId: Number(product_id),
-                productName: String(product_name),
+                productId: product.product_id,
+                productName,
                 movementType: "write_off",
                 quantity: qty,
                 movementDate: parsedDate,
@@ -134,7 +151,7 @@ export async function createReturn(input: ReturnInput, actor: Actor | null, info
 
             const [returnResult] = await tx.insert(returns).values({
                 return_type,
-                product_name: String(product_name),
+                product_name: productName,
                 quantity: qty,
                 per_unit_amount: rate,
                 total: returnTotal,
@@ -147,25 +164,26 @@ export async function createReturn(input: ReturnInput, actor: Actor | null, info
 
             await logActivity(tx, actor, {
                 action: "return.create",
-                summary: `Return #${returnId} (${RETURN_TYPES[return_type].label}): wrote off ${formatQty(qty)} × ${product_name}, expense ${formatMoney(returnTotal)}`,
+                summary: `Return #${returnId} (${RETURN_TYPES[return_type].label}): wrote off ${formatQty(qty)} × ${productName}, expense ${formatMoney(returnTotal)}`,
                 entityType: "return",
                 entityId: returnId,
-                details: { return_type, product_name, quantity: qty, per_unit_amount: rate, total: returnTotal, expense_item_id: newExpenseId, return_date: String(expense_date) },
+                details: { return_type, product_name: productName, quantity: qty, per_unit_amount: rate, total: returnTotal, expense_item_id: newExpenseId, return_date: String(expense_date) },
             }, info);
 
             return { message: "Stock Expense Return processed.", return_id: returnId, expense_item_id: newExpenseId };
         });
     }
 
-    if (!isPositive(sale_id) || !sale_product_name || !isPositive(sale_quantity) || !isPositive(sale_per_unit_amount)) {
+    if (!isPositive(sale_id) || typeof sale_product_name !== "string" || !sale_product_name || !isPositive(sale_quantity) || !isPositive(sale_per_unit_amount)) {
         throw new RequestError(return_type === "sale_reduction_return"
             ? "sale_id, sale_product_name, sale_quantity, and sale_per_unit_amount are required for Sale Reduction Return."
             : "sale_id, sale_product_name, sale_quantity, sale_per_unit_amount, and expense_per_unit_amount are required for Sale Reduction Expense Return.");
     }
     const saleId = Number(sale_id);
-    const saleProduct = String(sale_product_name);
+    const saleProduct = sale_product_name;
     const returnQty = Number(sale_quantity);
     const unitPrice = Number(sale_per_unit_amount);
+    assertStorable(returnQty, unitPrice, roundMoney(returnQty * unitPrice));
 
     // ── Sale reduction return: reduce the invoice and credit the goods back to stock ──
     if (return_type === "sale_reduction_return") {
@@ -179,7 +197,7 @@ export async function createReturn(input: ReturnInput, actor: Actor | null, info
             // Add returned qty BACK to the selected stock and log it in the stock ledger
             const [creditProduct] = await tx.select().from(products).where(eq(products.product_id, Number(product_id)));
             const noStockRow = `No stock record found for product ID ${product_id}.`;
-            if (!creditProduct) throw new Error(noStockRow);
+            if (!creditProduct) throw new RequestError(noStockRow);
 
             const movement = await applyStockMovement(tx, {
                 productId: creditProduct.product_id,
@@ -224,6 +242,7 @@ export async function createReturn(input: ReturnInput, actor: Actor | null, info
         throw new RequestError("sale_id, sale_product_name, sale_quantity, sale_per_unit_amount, and expense_per_unit_amount are required for Sale Reduction Expense Return.");
     }
     const expenseRate = Number(expense_per_unit_amount);
+    assertStorable(expenseRate, roundMoney(returnQty * expenseRate));
 
     return db.transaction(async (tx) => {
         const { returnLineTotal, customerName } = await reduceSale(tx, saleId, saleProduct, returnQty, unitPrice);
@@ -267,11 +286,10 @@ export async function createReturn(input: ReturnInput, actor: Actor | null, info
 
 // ─── Voiding ──────────────────────────────────────────────────────────────────
 
-async function voidLinkedExpense(tx: DbTransaction, expenseId: number | null, actor: Actor, note: string) {
-    if (!expenseId) return;
+async function voidLinkedExpense(tx: DbTransaction, expenseId: number, actor: Actor, note: string) {
     await tx.update(expenses)
-        .set({ status: "void", void_reason: note.slice(0, 255), voided_at: new Date(), voided_by: actor.id })
-        .where(and(eq(expenses.expense_item_id, expenseId), eq(expenses.status, "posted")));
+        .set(voidedColumns(actor, note))
+        .where(and(eq(expenses.expense_item_id, expenseId), postedExpense));
 }
 
 async function productOfStockRow(tx: DbTransaction, stockId: number | null) {
@@ -286,8 +304,7 @@ async function productOfStockRow(tx: DbTransaction, stockId: number | null) {
 
 // Undoes a return: puts back what it changed on the invoice, in stock and in expenses, and marks it void
 export async function voidReturn(actor: Actor, returnId: number, reasonInput: unknown, info: RequestInfo) {
-    const reason = requiredText(reasonInput, "A reason for voiding");
-    if (reason.length < 3) throw new RequestError("Please give a short reason for voiding this return.");
+    const reason = voidReason(reasonInput, "return");
 
     return db.transaction(async (tx) => {
         const [ret] = await tx.select().from(returns).where(eq(returns.return_id, returnId)).for("update");
@@ -296,8 +313,6 @@ export async function voidReturn(actor: Actor, returnId: number, reasonInput: un
         if (!isReturnType(ret.return_type)) throw new RequestError(`Return #${returnId} has an unknown type and can't be voided.`, 409);
 
         const qty = Number(ret.quantity);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
         const note = `Return #${returnId} voided: ${reason}`;
         const effects: string[] = [];
 
@@ -333,9 +348,9 @@ export async function voidReturn(actor: Actor, returnId: number, reasonInput: un
                 productName: product.product_name,
                 movementType: writeOff ? "write_off_reversal" : "sale_return_reversal",
                 quantity: qty,
-                movementDate: today,
+                movementDate: startOfDay(),
                 reference: `Return #${returnId}`,
-                note: reason.slice(0, 255),
+                note: reason,
                 createdBy: actor.id,
                 messages: {
                     insufficient: (available) =>
@@ -351,9 +366,7 @@ export async function voidReturn(actor: Actor, returnId: number, reasonInput: un
             effects.push(`expense #${ret.expense_item_id} voided`);
         }
 
-        await tx.update(returns)
-            .set({ status: "void", void_reason: reason.slice(0, 255), voided_at: new Date(), voided_by: actor.id })
-            .where(eq(returns.return_id, returnId));
+        await tx.update(returns).set(voidedColumns(actor, reason)).where(eq(returns.return_id, returnId));
 
         await logActivity(tx, actor, {
             action: "return.void",
@@ -377,9 +390,6 @@ export interface ReturnFilters {
     page: number;
     pageSize: number;
 }
-
-const createdByUser = alias(users, "created_by_user");
-const voidedByUser = alias(users, "voided_by_user");
 
 export async function listReturns(filters: ReturnFilters) {
     const where: SQL[] = [];

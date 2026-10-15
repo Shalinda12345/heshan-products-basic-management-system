@@ -1,16 +1,17 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React from "react";
+import { formatMoney } from "@/app/lib/format";
+import { useResource } from "@/app/lib/use-resource";
 
 interface SaleItem {
   product_name: string;
   quantity: number;
   selling_price: number;
   total: number;
-  actions?: React.ReactNode;
 }
 
-interface SalesInvoicePageProps {
+interface SalesInvoiceProps {
   items: SaleItem[];
   onRemoveItem: (index: number) => void;
   customerName: string;
@@ -24,43 +25,10 @@ interface Customer {
   customer_name: string;
 }
 
-export default function SalesInvoicePage(props: SalesInvoicePageProps) {
-  // Safe destructuring with fallbacks to avoid crashes before hooks execute
-  const {
-    items = [],
-    onRemoveItem,
-    customerName,
-    saleDate,
-    onCustomerChange,
-    onSaleDateChange,
-  } = props || {};
-
-  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-
+// The invoice being built on the New Sale page: its date, customer and lines
+export default function SalesInvoice({ items, onRemoveItem, customerName, saleDate, onCustomerChange, onSaleDateChange }: SalesInvoiceProps) {
+  const customers = useResource<Customer[]>("/api/customers");
   const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
-
-  useEffect(() => {
-    async function fetchCustomers() {
-      try {
-        const response = await fetch("/api/customers", { cache: "no-store", });
-        if (!response.ok) throw new Error("Network response was not ok");
-        const data = await response.json();
-        setAllCustomers(data);
-      } catch (error) {
-        console.error("Error fetching customers:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchCustomers();
-  }, []);
-
-  // Next.js page route prerender guard (Moved AFTER all hooks):
-  if (!props || !props.items) {
-    return null;
-  }
 
   return (
     <div className="space-y-8">
@@ -83,7 +51,7 @@ export default function SalesInvoicePage(props: SalesInvoicePageProps) {
               <input
                 type="date"
                 value={saleDate}
-                onChange={(e) => onSaleDateChange && onSaleDateChange(e.target.value)}
+                onChange={(e) => onSaleDateChange(e.target.value)}
                 className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                 required
               />
@@ -95,26 +63,27 @@ export default function SalesInvoicePage(props: SalesInvoicePageProps) {
             <label htmlFor="customer" className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
               Select Customer
             </label>
-            {loading ? (
+            {customers.loading ? (
               <div className="flex items-center justify-center py-3 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 rounded-xl text-slate-400 text-sm animate-pulse">
-                Loading client directories...
+                Loading customers...
               </div>
             ) : (
               <select
                 id="customer"
                 value={customerName}
-                onChange={(e) => onCustomerChange && onCustomerChange(e.target.value)}
+                onChange={(e) => onCustomerChange(e.target.value)}
                 className="w-full px-4 py-3 border border-slate-800 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-900/30 bg-slate-900 text-white text-sm font-medium transition-all"
                 required
               >
                 <option value="">Choose a customer</option>
-                {allCustomers.map((customer) => (
+                {(customers.data ?? []).map((customer) => (
                   <option key={customer.customer_id} value={customer.customer_name}>
                     {customer.customer_name}
                   </option>
                 ))}
               </select>
             )}
+            {customers.error && <p className="mt-1.5 text-xs font-medium text-rose-400">{customers.error}</p>}
           </div>
         </div>
       </div>
@@ -169,16 +138,16 @@ export default function SalesInvoicePage(props: SalesInvoicePageProps) {
                     <td className="py-4 px-5 font-semibold text-white">{item.product_name}</td>
                     <td className="py-4 px-5 text-right font-mono font-medium">{item.quantity}</td>
                     <td className="py-4 px-5 text-right font-mono text-slate-300">
-                      Rs. {item.selling_price.toFixed(2)}
+                      {formatMoney(item.selling_price)}
                     </td>
                     <td className="py-4 px-5 text-right font-mono font-bold text-white">
-                      Rs. {item.total.toFixed(2)}
+                      {formatMoney(item.total)}
                     </td>
                     <td className="py-4 px-5 text-center">
                       <button
                         type="button"
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 hover:bg-red-950/20 text-red-400 hover:text-red-300 rounded-lg text-xs font-bold transition-all"
-                        onClick={() => onRemoveItem && onRemoveItem(index)}
+                        onClick={() => onRemoveItem(index)}
                       >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -206,7 +175,7 @@ export default function SalesInvoicePage(props: SalesInvoicePageProps) {
           <div className="text-right">
             <span className="text-slate-400 text-xs font-bold uppercase tracking-wider block mb-1">Grand Total</span>
             <p className="text-3xl font-extrabold text-transparent bg-gradient-to-r from-indigo-400 to-sky-400 bg-clip-text">
-              Rs. {grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              {formatMoney(grandTotal)}
             </p>
           </div>
         </div>

@@ -43,7 +43,10 @@ export async function GET(request: Request) {
             attentionOnly: params.get("attention") === "1",
             search: params.get("q"),
         };
-        const result = await listActivity(filters);
+        const [result, people] = await Promise.all([
+            listActivity(filters),
+            !csv && params.get("include_users") === "1" ? activityUsers() : null,
+        ]);
 
         if (csv) {
             return new Response(activityCsv(result.rows), {
@@ -54,8 +57,7 @@ export async function GET(request: Request) {
                 },
             });
         }
-        const people = params.get("include_users") === "1" ? { users: await activityUsers() } : {};
-        return NextResponse.json({ ...result, ...people }, { headers: { "Cache-Control": "no-store" } });
+        return NextResponse.json({ ...result, ...(people ? { users: people } : {}) }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
         return readErrorJson(error, "Failed to read the activity log:");
     }

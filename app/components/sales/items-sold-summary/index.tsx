@@ -1,9 +1,15 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import MonthSelector from '@/app/components/ui/month-selector';
+import { Notice } from '@/app/components/ui/feedback';
+import { queryString } from '@/app/lib/api-client';
+import { useResource } from '@/app/lib/use-resource';
 
-export interface ItemSummary {
+type Timeframe = 'daily' | 'weekly' | 'monthly' | 'custom';
+type SortKey = 'quantity-desc' | 'quantity-asc' | 'revenue-desc' | 'revenue-asc' | 'name';
+
+interface ItemSummary {
     product_name: string;
     quantity: number;
     revenue: number;
@@ -15,7 +21,7 @@ export interface ItemSummary {
     percentage_of_revenue: number;
 }
 
-export interface SummaryStats {
+interface SummaryStats {
     totalUnitsSold: number;
     totalRevenue: number;
     totalProducts: number;
@@ -26,107 +32,57 @@ export interface SummaryStats {
     } | null;
 }
 
+interface ItemsSummaryResponse {
+    items: ItemSummary[];
+    summary: SummaryStats;
+    dateRange?: { label?: string };
+}
+
+const EMPTY_SUMMARY: SummaryStats = { totalUnitsSold: 0, totalRevenue: 0, totalProducts: 0, topProduct: null };
+
 export interface ItemsSoldSummaryProps {
-    timeframe?: 'daily' | 'weekly' | 'monthly' | 'custom';
+    timeframe?: Timeframe;
     selectedYear?: number;
     selectedMonth?: number;
-    selectedDate?: string;
-    startDate?: string;
-    endDate?: string;
+    // The Items Sold page lets the user pick the timeframe and period; elsewhere the props fix them
     showTimeframeSelector?: boolean;
     title?: string;
     subtitle?: string;
-    compact?: boolean;
 }
 
 export default function ItemsSoldSummary({
     timeframe: initialTimeframe = 'daily',
     selectedYear: propYear,
     selectedMonth: propMonth,
-    selectedDate: propDate,
-    startDate: propStartDate,
-    endDate: propEndDate,
     showTimeframeSelector = false,
     title,
     subtitle,
 }: ItemsSoldSummaryProps) {
-    const [localTimeframe, setLocalTimeframe] = useState<'daily' | 'weekly' | 'monthly' | 'custom'>(initialTimeframe);
+    const [localTimeframe, setLocalTimeframe] = useState<Timeframe>(initialTimeframe);
     const [localYear, setLocalYear] = useState<number>(propYear ?? new Date().getFullYear());
     const [localMonth, setLocalMonth] = useState<number>(propMonth ?? new Date().getMonth() + 1);
-    const [localStartDate, setLocalStartDate] = useState<string>(propStartDate ?? '');
-    const [localEndDate, setLocalEndDate] = useState<string>(propEndDate ?? '');
-    const [localSpecificDate] = useState<string>(propDate ?? '');
+    // A custom date range (only the Items Sold page shows the date inputs)
+    const [customStartDate, setCustomStartDate] = useState<string>('');
+    const [customEndDate, setCustomEndDate] = useState<string>('');
+    const [searchQuery, setSearchQuery] = useState<string>('');
+    const [sortBy, setSortBy] = useState<SortKey>('quantity-desc');
 
     const currentTimeframe = showTimeframeSelector ? localTimeframe : initialTimeframe;
     const year = showTimeframeSelector ? localYear : (propYear ?? new Date().getFullYear());
     const month = showTimeframeSelector ? localMonth : (propMonth ?? new Date().getMonth() + 1);
-    const customStartDate = showTimeframeSelector ? localStartDate : (propStartDate ?? '');
-    const customEndDate = showTimeframeSelector ? localEndDate : (propEndDate ?? '');
-    const specificDate = showTimeframeSelector ? localSpecificDate : (propDate ?? '');
+    const byMonth = currentTimeframe === 'monthly' || currentTimeframe === 'custom';
+    const byRange = currentTimeframe === 'custom' && !!customStartDate && !!customEndDate;
 
-    const [items, setItems] = useState<ItemSummary[]>([]);
-    const [summary, setSummary] = useState<SummaryStats>({
-        totalUnitsSold: 0,
-        totalRevenue: 0,
-        totalProducts: 0,
-        topProduct: null,
-    });
-    const [dateRangeLabel, setDateRangeLabel] = useState<string>('');
-    const [loading, setLoading] = useState<boolean>(true);
-    const [searchQuery, setSearchQuery] = useState<string>('');
-    const [sortBy, setSortBy] = useState<'quantity-desc' | 'quantity-asc' | 'revenue-desc' | 'revenue-asc' | 'name'>('quantity-desc');
-
-    // Fetch items summary
-    useEffect(() => {
-        let isCancelled = false;
-        async function fetchSummary() {
-            setLoading(true);
-            try {
-                const params = new URLSearchParams();
-                params.append('timeframe', currentTimeframe);
-
-                if (currentTimeframe === 'monthly' || currentTimeframe === 'custom') {
-                    if (year) params.append('year', year.toString());
-                    if (month) params.append('month', month.toString());
-                }
-
-                if (currentTimeframe === 'custom' && customStartDate && customEndDate) {
-                    params.append('startDate', customStartDate);
-                    params.append('endDate', customEndDate);
-                }
-
-                if (currentTimeframe === 'daily' && specificDate) {
-                    params.append('date', specificDate);
-                }
-
-                const res = await fetch(`/api/sales/get-items-summary?${params.toString()}`, { cache: 'no-store' });
-                if (!res.ok) throw new Error('Failed to fetch items summary');
-                const data = await res.json();
-
-                if (!isCancelled && data.success) {
-                    setItems(data.items || []);
-                    setSummary(data.summary || {
-                        totalUnitsSold: 0,
-                        totalRevenue: 0,
-                        totalProducts: 0,
-                        topProduct: null,
-                    });
-                    if (data.dateRange?.label) {
-                        setDateRangeLabel(data.dateRange.label);
-                    }
-                }
-            } catch (err) {
-                console.error('Error loading items summary:', err);
-            } finally {
-                if (!isCancelled) setLoading(false);
-            }
-        }
-
-        fetchSummary();
-        return () => {
-            isCancelled = true;
-        };
-    }, [currentTimeframe, year, month, customStartDate, customEndDate, specificDate]);
+    const { data, error, loading } = useResource<ItemsSummaryResponse>(`/api/sales/get-items-summary${queryString({
+        timeframe: currentTimeframe,
+        year: byMonth ? year : null,
+        month: byMonth ? month : null,
+        startDate: byRange ? customStartDate : null,
+        endDate: byRange ? customEndDate : null,
+    })}`);
+    const items = useMemo(() => data?.items ?? [], [data]);
+    const summary = data?.summary ?? EMPTY_SUMMARY;
+    const dateRangeLabel = data?.dateRange?.label ?? '';
 
     // Filter and sort items
     const filteredAndSortedItems = useMemo(() => {
@@ -153,10 +109,7 @@ export default function ItemsSoldSummary({
     }, [items, searchQuery, sortBy]);
 
     // Max quantity for bar scaling
-    const maxQuantity = useMemo(() => {
-        if (items.length === 0) return 1;
-        return Math.max(...items.map((i) => i.quantity), 1);
-    }, [items]);
+    const maxQuantity = useMemo(() => Math.max(...items.map((i) => i.quantity), 1), [items]);
 
     const getRankBadge = (index: number) => {
         if (sortBy !== 'quantity-desc') return `#${index + 1}`;
@@ -202,7 +155,7 @@ export default function ItemsSoldSummary({
                         ].map((tab) => (
                             <button
                                 key={tab.key}
-                                onClick={() => setLocalTimeframe(tab.key as 'daily' | 'weekly' | 'monthly' | 'custom')}
+                                onClick={() => setLocalTimeframe(tab.key as Timeframe)}
                                 className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 active:scale-95 cursor-pointer ${
                                     currentTimeframe === tab.key
                                         ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
@@ -239,14 +192,18 @@ export default function ItemsSoldSummary({
                             <input
                                 type="date"
                                 value={customStartDate}
-                                onChange={(e) => setLocalStartDate(e.target.value)}
+                                max={customEndDate || undefined}
+                                aria-label="From date"
+                                onChange={(e) => setCustomStartDate(e.target.value)}
                                 className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-medium focus:outline-none focus:border-blue-500"
                             />
                             <span className="text-slate-500 text-xs">to</span>
                             <input
                                 type="date"
                                 value={customEndDate}
-                                onChange={(e) => setLocalEndDate(e.target.value)}
+                                min={customStartDate || undefined}
+                                aria-label="To date"
+                                onChange={(e) => setCustomEndDate(e.target.value)}
                                 className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-medium focus:outline-none focus:border-blue-500"
                             />
                         </div>
@@ -261,8 +218,8 @@ export default function ItemsSoldSummary({
                                 setLocalYear(yr);
                                 setLocalMonth(mo);
                                 // A date range takes precedence over the month, so clear it when a month is picked
-                                setLocalStartDate('');
-                                setLocalEndDate('');
+                                setCustomStartDate('');
+                                setCustomEndDate('');
                             }}
                         />
                     </div>
@@ -352,7 +309,7 @@ export default function ItemsSoldSummary({
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400 whitespace-nowrap">Sort By:</span>
                     <select
                         value={sortBy}
-                        onChange={(e) => setSortBy(e.target.value as 'quantity-desc' | 'quantity-asc' | 'revenue-desc' | 'revenue-asc' | 'name')}
+                        onChange={(e) => setSortBy(e.target.value as SortKey)}
                         className="bg-slate-900 border border-slate-700 text-slate-200 text-xs sm:text-sm rounded-xl px-3 py-2 font-medium focus:outline-none focus:border-blue-500 cursor-pointer"
                     >
                         <option value="quantity-desc">Quantity (High → Low)</option>
@@ -363,6 +320,8 @@ export default function ItemsSoldSummary({
                     </select>
                 </div>
             </div>
+
+            {error && <Notice tone="error" title="The items sold could not be loaded">{error}</Notice>}
 
             {/* Items Table & List */}
             <div className="glass-card rounded-2xl overflow-hidden">

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { actorOf, authorize } from "@/app/lib/auth";
 import { readErrorJson, readJson, writeErrorJson } from "@/app/lib/api-error";
-import { hasPermission } from "@/app/lib/permissions";
+import { canSeeCosts } from "@/app/lib/permissions";
 import { requestInfo } from "@/app/services/activity";
 import { createProduct, listProducts } from "@/app/services/products";
 
@@ -13,9 +13,8 @@ export async function GET(request: Request) {
     if (!auth.ok) return auth.response;
     try {
         const includeInactive = new URL(request.url).searchParams.get("include_inactive") === "1";
-        const showCost = hasPermission(auth.user.role, "reports.view") || hasPermission(auth.user.role, "masterdata.manage");
         const rows = await listProducts({ includeInactive });
-        return NextResponse.json(showCost ? rows : rows.map((row) => ({ ...row, unit_cost: null })), {
+        return NextResponse.json(canSeeCosts(auth.user.role) ? rows : rows.map((row) => ({ ...row, unit_cost: null })), {
             headers: { "Cache-Control": "no-store" },
         });
     } catch (error) {

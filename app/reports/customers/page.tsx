@@ -1,6 +1,5 @@
 'use client';
 
-import { Suspense } from 'react';
 import ReportsNavigation from '@/app/components/reports/reports-navigation';
 import { PeriodBar, usePeriod } from '@/app/components/reports/period';
 import { RankingChart } from '@/app/components/reports/charts';
@@ -10,7 +9,7 @@ import { Button } from '@/app/components/ui/form';
 import { Badge, Notice, Spinner } from '@/app/components/ui/feedback';
 import { queryString } from '@/app/lib/api-client';
 import { downloadCsv } from '@/app/lib/csv';
-import { formatAmount, formatDate, formatMoney, formatPercent } from '@/app/lib/format';
+import { formatAmount, formatDate, formatMoney, formatPercent, percentChange } from '@/app/lib/format';
 import { useResource } from '@/app/lib/use-resource';
 
 interface CustomerRow {
@@ -48,16 +47,14 @@ interface CustomersReport {
 // Haven't bought for this many days: worth a call
 const QUIET_DAYS = 30;
 
-function CustomersReportContent() {
+export default function CustomersReportPage() {
     const period = usePeriod();
     const report = useResource<CustomersReport>(`/api/reports/customers${queryString(period.range)}`);
     const data = report.data;
 
     const top = (data?.rows ?? []).filter((r) => r.revenue > 0).slice(0, 10).map((r) => ({ name: r.customer_name, value: r.revenue }));
     const quiet = (data?.rows ?? []).filter((r) => r.is_active && r.days_since_last_purchase !== null && r.days_since_last_purchase >= QUIET_DAYS);
-    const buyingChange = data && data.totals.prev_customers_buying
-        ? ((data.totals.customers_buying - data.totals.prev_customers_buying) / data.totals.prev_customers_buying) * 100
-        : null;
+    const buyingChange = data ? percentChange(data.totals.customers_buying, data.totals.prev_customers_buying) : null;
 
     const exportCsv = () => data && downloadCsv(`customer-performance-${data.period.label.replace(/\s+/g, '-')}.csv`, data.rows, [
         { header: 'Customer', value: (r) => r.customer_name },
@@ -172,13 +169,5 @@ function CustomersReportContent() {
                 </div>
             )}
         </PageShell>
-    );
-}
-
-export default function CustomersReportPage() {
-    return (
-        <Suspense fallback={<Spinner />}>
-            <CustomersReportContent />
-        </Suspense>
     );
 }

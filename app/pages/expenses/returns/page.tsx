@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import ExpensesNavigation from '@/app/components/expenses/expenses-navigation';
 import { PageHeader, PageShell, Card, LoadingRows, TableMessage, tableClasses as t } from '@/app/components/ui/page-shell';
-import { Button, filterClass } from '@/app/components/ui/form';
+import { Button, StatusFilter, filterClass, type StatusChoice } from '@/app/components/ui/form';
 import { Badge, DocumentStatusBadge, Notice } from '@/app/components/ui/feedback';
-import Pagination from '@/app/components/ui/pagination';
+import Pagination, { withPageReset } from '@/app/components/ui/pagination';
 import VoidDialog from '@/app/components/ui/void-dialog';
 import { queryString } from '@/app/lib/api-client';
 import { formatAmount, formatDate, formatQty } from '@/app/lib/format';
@@ -51,7 +51,7 @@ function voidEffect(row: ReturnRow) {
 
 export default function ReturnsPage() {
     const [type, setType] = useState<'' | ReturnType>('');
-    const [status, setStatus] = useState<'all' | 'posted' | 'void'>('all');
+    const [status, setStatus] = useState<StatusChoice>('all');
     const [from, setFrom] = useState('');
     const [to, setTo] = useState('');
     const [page, setPage] = useState(1);
@@ -59,10 +59,7 @@ export default function ReturnsPage() {
     const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
     const returns = useResource<{ rows: ReturnRow[]; total: number }>(`/api/returns${queryString({ type, status, from, to, page, page_size: PAGE_SIZE })}`);
-    const update = <T,>(setter: (value: T) => void) => (value: T) => {
-        setter(value);
-        setPage(1);
-    };
+    const update = withPageReset(setPage);
     const rows = returns.data?.rows ?? [];
 
     return (
@@ -80,11 +77,7 @@ export default function ReturnsPage() {
                     <option value="">All types</option>
                     {(Object.keys(RETURN_TYPES) as ReturnType[]).map((key) => <option key={key} value={key}>{RETURN_TYPES[key].label}</option>)}
                 </select>
-                <select aria-label="Status" value={status} onChange={(e) => update(setStatus)(e.target.value as 'all' | 'posted' | 'void')} className={filterClass}>
-                    <option value="all">Posted &amp; void</option>
-                    <option value="posted">Posted only</option>
-                    <option value="void">Void only</option>
-                </select>
+                <StatusFilter value={status} onChange={update(setStatus)} />
             </div>
 
             {notice && <Notice tone={notice.tone} onDismiss={() => setNotice(null)}>{notice.text}</Notice>}

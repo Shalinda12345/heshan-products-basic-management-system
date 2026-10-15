@@ -1,34 +1,18 @@
 'use client';
 
 import React from 'react';
-
-export const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
+import { MONTH_NAMES } from '@/app/lib/format';
 
 interface MonthSelectorProps {
   selectedYear: number;
   selectedMonth: number; // 1 - 12
   onChange: (year: number, month: number) => void;
-  className?: string;
 }
 
 export default function MonthSelector({
   selectedYear,
   selectedMonth,
   onChange,
-  className = '',
 }: MonthSelectorProps) {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
@@ -64,7 +48,7 @@ export default function MonthSelector({
 
   return (
     <div
-      className={`inline-flex items-center gap-2 bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-1.5 shadow-xl ${className}`}
+      className="inline-flex items-center gap-2 bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-1.5 shadow-xl"
       style={{ background: 'linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 100%)' }}
     >
       {/* Previous month button */}

@@ -141,4 +141,10 @@ describe("password resets and sign-outs", () => {
     it("are refused to non-administrators", async () => {
         expect((await post(resetPassword, "/api/users/4/reset-password", {}, { params: { id: "4" }, as: "owner" })).status).toBe(403);
     });
+
+    it("won't reset an administrator's own password (it would sign them out before they could note it)", async () => {
+        const { status, body } = await post(resetPassword, "/api/users/1/reset-password", {}, { params: { id: "1" } });
+        expect(status).toBe(400);
+        expect(body.message).toBe("To change your own password, use My account.");
+    });
 });

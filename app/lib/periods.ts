@@ -8,11 +8,19 @@ export interface DateRange {
     to: string;
 }
 
-function addDays(date: Date, days: number): Date {
+// Local midnight `days` days after `date`'s day (before it when negative)
+export function addDays(date: Date, days: number): Date {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
 }
 
-function daysBetween(from: Date, to: Date): number {
+// Monday to Sunday of the week that contains `day`, as local midnights
+export function weekContaining(day: Date): { start: Date; end: Date } {
+    const start = addDays(day, -((day.getDay() + 6) % 7));
+    return { start, end: addDays(start, 6) };
+}
+
+// Whole days from `from` to `to` (negative when `to` is earlier)
+export function daysBetween(from: Date, to: Date): number {
     return Math.round((to.getTime() - from.getTime()) / 86_400_000);
 }
 
@@ -58,10 +66,6 @@ export function samePeriodBefore(range: DateRange, unit: "day" | "week" | "month
         return new Date(year, month, Math.min(d.getDate(), lastDay));
     };
     return { from: toIsoDate(back(from)), to: toIsoDate(back(to)) };
-}
-
-export function monthRangeOf(year: number, month: number): DateRange {
-    return { from: toIsoDate(new Date(year, month - 1, 1)), to: toIsoDate(new Date(year, month, 0)) };
 }
 
 export const PERIOD_PRESETS = {

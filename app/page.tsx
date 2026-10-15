@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import MonthSelector, { MONTH_NAMES } from '@/app/components/ui/month-selector';
-import { backgroundFetch, useLiveRefresh } from '@/app/lib/use-live-refresh';
+import MonthSelector from '@/app/components/ui/month-selector';
+import { useLiveRefresh } from '@/app/lib/use-live-refresh';
+import { apiGet } from '@/app/lib/api-client';
 import { stockStatus } from '@/app/lib/stock';
 import { ChangeIndicator } from '@/app/components/ui/feedback';
-import { formatMoneyChange, percentChange, percentChangeOfPositive } from '@/app/lib/format';
+import { MONTH_NAMES, formatAmount, formatChange, formatMoneyChange, percentChange, percentChangeOfPositive } from '@/app/lib/format';
 import {
     AreaChart, Area, BarChart, Bar, LineChart, Line,
     PieChart, Pie, Cell,
@@ -76,10 +77,7 @@ const PIE_COLORS = [
 
 // ─── Number helpers ───────────────────────────────────────────────────────────
 // A change in a percentage, in percentage points: "+3.2 pts"
-function formatPoints(n: number) {
-    const rounded = Math.round(n * 10) / 10;
-    return `${rounded > 0 ? '+' : rounded < 0 ? '−' : ''}${Math.abs(rounded).toFixed(1)} pts`;
-}
+const formatPoints = (n: number) => formatChange(n).replace('%', ' pts');
 
 function fmt(n: number) {
     if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -87,16 +85,10 @@ function fmt(n: number) {
     return n.toFixed(2);
 }
 
-function fmtFull(n: number) {
-    return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-}
-
 // ─── Animated counter ─────────────────────────────────────────────────────────
-// FIX 1: initialise from `target` (not 0) so the card never starts at zero.
-// FIX 2: store the rAF handle and cancel it in cleanup so two animations
-//         can never run in parallel and fight each other (causing shuffling).
-// FIX 3: update prevRef BEFORE the animation loop so that if target changes
-//         mid-flight the next animation starts from the visually correct place.
+// Counts from the previous value to `target`. Starts at `target` (never at zero), cancels a running animation
+// when the target changes, and remembers the destination first so a new animation starts from where the old
+// one was heading.
 function useAnimatedCount(target: number, duration = 900) {
     const [display, setDisplay] = useState(target);
     const prevRef = useRef(target);
@@ -141,7 +133,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
             <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6, fontWeight: 600 }}>{label}</p>
             {payload.map((p) => (
                 <p key={p.name} style={{ color: p.color, fontSize: 13, margin: '2px 0', fontWeight: 600 }}>
-                    {p.name}: <span style={{ color: '#f1f5f9' }}>LKR {fmtFull(p.value)}</span>
+                    {p.name}: <span style={{ color: '#f1f5f9' }}>LKR {formatAmount(p.value)}</span>
                 </p>
             ))}
         </div>
@@ -192,8 +184,7 @@ function KpiCard({ title, value, prefix, suffix, color, icon, trend, isLoading, 
                 position: 'absolute', top: -30, right: -30, width: 120, height: 120,
                 background: color, borderRadius: '50%', opacity: 0.08, filter: 'blur(30px)',
             }} />
-            {/* FIX: shimmer overlay while loading — value stays visible but dimmed.
-                This prevents the number from bouncing through 0 on every period switch. */}
+            {/* While loading, the old value stays visible but dimmed under a shimmer, rather than dropping to 0 */}
             {isLoading && (
                 <div style={{
                     position: 'absolute', inset: 0, borderRadius: 20, zIndex: 2,
@@ -254,6 +245,17 @@ export default function Home() {
     // A counter bumped by the Refresh button — causes the effect to re-run
     const [refreshTick, setRefreshTick] = useState(0);
     const [stock, setStock] = useState<StockItem[] | null>(null);
+    // The last summary shown, so a background refresh that changes nothing doesn't replay the chart animations
+    const shownSummary = useRef('');
+
+    const showSummary = useCallback((summary: DashboardData) => {
+        const text = JSON.stringify(summary);
+        if (text !== shownSummary.current) {
+            shownSummary.current = text;
+            setData(summary);
+        }
+        setLastUpdated(new Date().toLocaleTimeString());
+    }, []);
 
     const yearsParam = period === 'multi' ? years : 1;
     const monthParam = period === 'month' ? `&year=${selectedYear}&month=${selectedMonth}` : '';
@@ -266,20 +268,10 @@ export default function Home() {
         const run = async () => {
             setLoading(true);
             try {
-                const res = await fetch(
-                    `${summaryUrl}&_t=${Date.now()}`,
-                    { signal: controller.signal, cache: 'no-store' }
-                );
-                if (!res.ok) throw new Error(`API returned ${res.status}`);
-                const json = await res.json();
-                if (!cancelled) {
-                    setData(json);
-                    setLastUpdated(new Date().toLocaleTimeString());
-                }
+                const summary = await apiGet<DashboardData>(summaryUrl, { signal: controller.signal });
+                if (!cancelled) showSummary(summary);
             } catch (e) {
-                if (e instanceof Error && e.name !== 'AbortError') {
-                    console.error('Dashboard fetch failed:', e);
-                }
+                if (!controller.signal.aborted) console.error('Dashboard fetch failed:', e);
             } finally {
                 if (!cancelled) {
                     setLoading(false);
@@ -293,34 +285,19 @@ export default function Home() {
             cancelled = true;
             controller.abort();
         };
-    }, [summaryUrl, refreshTick]);
+    }, [summaryUrl, refreshTick, showSummary]);
 
     // Background refresh: update the figures in place, without the loading skeletons
     const refreshSummarySilently = useCallback(async () => {
-        const res = await backgroundFetch(summaryUrl);
-        if (!res.ok) return;
-        setData(await res.json());
-        setLastUpdated(new Date().toLocaleTimeString());
-    }, [summaryUrl]);
+        showSummary(await apiGet<DashboardData>(summaryUrl, { background: true }));
+    }, [summaryUrl, showSummary]);
     useLiveRefresh(refreshSummarySilently, 60000, !loading);
 
-    const refreshStock = useCallback(async () => {
-        const res = await backgroundFetch('/api/stock');
-        if (res.ok) setStock(await res.json());
-    }, []);
+    const loadStock = useCallback(() => apiGet<StockItem[]>('/api/stock', { background: true }).then(setStock), []);
     useEffect(() => {
-        let cancelled = false;
-        backgroundFetch('/api/stock')
-            .then(res => (res.ok ? res.json() : null))
-            .then(items => {
-                if (!cancelled && items) setStock(items);
-            })
-            .catch(() => undefined);
-        return () => {
-            cancelled = true;
-        };
-    }, []);
-    useLiveRefresh(refreshStock, 15000);
+        loadStock().catch(() => undefined);
+    }, [loadStock]);
+    useLiveRefresh(loadStock, 15000);
 
     const stockAlerts = (stock ?? [])
         .filter(item => item.is_active && stockStatus(item.quantity, item.reorder_level) !== 'ok')
@@ -331,6 +308,7 @@ export default function Home() {
     // Current date header
     const today = new Date();
     const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const periodLabel = period === 'month' ? `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}` : PERIODS.find(p => p.key === period)?.label;
 
     const kpis = data?.kpis;
     const prev = data?.comparison?.kpis;
@@ -506,7 +484,7 @@ export default function Home() {
 
                 {/* ═══ Net Profit Chart (full width) ══════════════════════════ */}
                 <div style={{ marginBottom: 28 }}>
-                    <ChartCard title="Net Profit Overview" subtitle={`Profit/loss trend — ${period === 'month' ? `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}` : PERIODS.find(p => p.key === period)?.label}${period === 'multi' ? ` (${years} years)` : ''}`}>
+                    <ChartCard title="Net Profit Overview" subtitle={`Profit/loss trend — ${periodLabel}${period === 'multi' ? ` (${years} years)` : ''}`}>
                         {loading ? <LoadingSkeleton height={300} /> : (
                             <ResponsiveContainer width="100%" height={300}>
                                 <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
@@ -552,23 +530,7 @@ export default function Home() {
 
                     {/* Sales Trend Line */}
                     <ChartCard title="Sales Trend" subtitle="Revenue trajectory over time">
-                        {loading ? <LoadingSkeleton height={260} /> : (
-                            <ResponsiveContainer width="100%" height={260}>
-                                <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                                    <defs>
-                                        <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.35} />
-                                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.01} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                                    <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                                    <YAxis tickFormatter={fmt} tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
-                                    <Tooltip content={<CustomTooltip />} />
-                                    <Area type="monotone" dataKey="sales" name="Sales" stroke="#3b82f6" strokeWidth={2.5} fill="url(#salesGrad)" dot={false} activeDot={{ r: 5, fill: '#3b82f6' }} />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        )}
+                        {loading ? <LoadingSkeleton height={260} /> : <TrendChart data={chartData} dataKey="sales" name="Sales" color="#3b82f6" />}
                     </ChartCard>
                 </div>
 
@@ -576,23 +538,7 @@ export default function Home() {
                 <div className="dash-grid-2">
                     {/* Expense Trend */}
                     <ChartCard title="Expense Trend" subtitle="Cost trajectory over time">
-                        {loading ? <LoadingSkeleton height={260} /> : (
-                            <ResponsiveContainer width="100%" height={260}>
-                                <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                                    <defs>
-                                        <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%"  stopColor="#ef4444" stopOpacity={0.35} />
-                                            <stop offset="95%" stopColor="#ef4444" stopOpacity={0.01} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                                    <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                                    <YAxis tickFormatter={fmt} tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
-                                    <Tooltip content={<CustomTooltip />} />
-                                    <Area type="monotone" dataKey="expenses" name="Expenses" stroke="#ef4444" strokeWidth={2.5} fill="url(#expGrad)" dot={false} activeDot={{ r: 5, fill: '#ef4444' }} />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        )}
+                        {loading ? <LoadingSkeleton height={260} /> : <TrendChart data={chartData} dataKey="expenses" name="Expenses" color="#ef4444" />}
                     </ChartCard>
 
                     {/* Expense Breakdown Donut */}
@@ -613,7 +559,7 @@ export default function Home() {
                                                 <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="rgba(0,0,0,0.2)" strokeWidth={2} />
                                             ))}
                                         </Pie>
-                                        <Tooltip formatter={(v) => [`LKR ${fmtFull(Number(v))}`, '']} contentStyle={{ background: 'rgba(15,23,42,0.92)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 12, color: '#f1f5f9' }} />
+                                        <Tooltip formatter={(v) => [`LKR ${formatAmount(Number(v))}`, '']} contentStyle={{ background: 'rgba(15,23,42,0.92)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 12, color: '#f1f5f9' }} />
                                         <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
                                     </PieChart>
                                 </ResponsiveContainer>
@@ -646,7 +592,7 @@ export default function Home() {
 
                 {/* ═══ Top Customers Table ═════════════════════════════════════ */}
                 <div style={{ marginBottom: 28 }}>
-                    <ChartCard title="Top Customers by Revenue" subtitle={`Highest-value customers — ${period === 'month' ? `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}` : PERIODS.find(p => p.key === period)?.label}`}>
+                    <ChartCard title="Top Customers by Revenue" subtitle={`Highest-value customers — ${periodLabel}`}>
                         {loading ? <LoadingSkeleton height={240} /> : (
                             data?.topCustomers && data.topCustomers.length > 0 ? (
                                 <div style={{ overflowX: 'auto' }}>
@@ -683,7 +629,7 @@ export default function Home() {
                                                             <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{c.name}</span>
                                                         </td>
                                                         <td style={{ ...tdStyle, textAlign: 'right', color: '#3b82f6', fontWeight: 700, fontFamily: 'monospace' }}>
-                                                            {fmtFull(c.total)}
+                                                            {formatAmount(c.total)}
                                                         </td>
                                                         <td style={{ ...tdStyle, textAlign: 'right', color: '#64748b', fontSize: 13 }}>
                                                             {share.toFixed(1)}%
@@ -715,9 +661,9 @@ export default function Home() {
                     <ChartCard title="Period Financial Summary" subtitle="Key financial metrics at a glance">
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20 }}>
                             {[
-                                { label: 'Gross Revenue', value: `LKR ${fmtFull(kpis?.totalSales ?? 0)}`, color: '#3b82f6', icon: '💰' },
-                                { label: 'Total Expenses', value: `LKR ${fmtFull(kpis?.totalExpenses ?? 0)}`, color: '#ef4444', icon: '📉' },
-                                { label: 'Net Profit', value: `LKR ${fmtFull(kpis?.netProfit ?? 0)}`, color: (kpis?.netProfit ?? 0) >= 0 ? '#10b981' : '#f97316', icon: (kpis?.netProfit ?? 0) >= 0 ? '✅' : '⚠️' },
+                                { label: 'Gross Revenue', value: `LKR ${formatAmount(kpis?.totalSales ?? 0)}`, color: '#3b82f6', icon: '💰' },
+                                { label: 'Total Expenses', value: `LKR ${formatAmount(kpis?.totalExpenses ?? 0)}`, color: '#ef4444', icon: '📉' },
+                                { label: 'Net Profit', value: `LKR ${formatAmount(kpis?.netProfit ?? 0)}`, color: (kpis?.netProfit ?? 0) >= 0 ? '#10b981' : '#f97316', icon: (kpis?.netProfit ?? 0) >= 0 ? '✅' : '⚠️' },
                                 { label: 'Profit Margin', value: `${(kpis?.profitMargin ?? 0).toFixed(1)}%`, color: '#a855f7', icon: '🎯' },
                                 { label: 'Expense Ratio', value: `${kpis?.totalSales ? ((kpis.totalExpenses / kpis.totalSales) * 100).toFixed(1) : '0.0'}%`, color: '#f59e0b', icon: '📊' },
                                 { label: 'Unique Customers', value: `${data?.uniqueCustomers ?? 0}`, color: '#0ea5e9', icon: '👥' },
@@ -765,6 +711,29 @@ const tdStyle: React.CSSProperties = {
     color: '#94a3b8', fontSize: 14, padding: '12px 16px',
 };
 
+// One series over time as a shaded area (the sales and expense trends)
+function TrendChart({ data, dataKey, name, color }: { data: ChartPoint[]; dataKey: 'sales' | 'expenses'; name: string; color: string }) {
+    const gradientId = `${dataKey}Grad`;
+    return (
+        <ResponsiveContainer width="100%" height={260}>
+            <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                    <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor={color} stopOpacity={0.35} />
+                        <stop offset="95%" stopColor={color} stopOpacity={0.01} />
+                    </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis tickFormatter={fmt} tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
+                <Tooltip content={<CustomTooltip />} />
+                <Area type="monotone" dataKey={dataKey} name={name} stroke={color} strokeWidth={2.5} fill={`url(#${gradientId})`} dot={false} activeDot={{ r: 5, fill: color }} />
+            </AreaChart>
+        </ResponsiveContainer>
+    );
+}
+
+// The page's <style> block defines the shimmer animation
 function LoadingSkeleton({ height }: { height: number }) {
     return (
         <div style={{
@@ -772,9 +741,7 @@ function LoadingSkeleton({ height }: { height: number }) {
             background: 'linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%)',
             backgroundSize: '200% 100%',
             animation: 'shimmer 1.5s infinite',
-        }}>
-            <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
-        </div>
+        }} />
     );
 }
 

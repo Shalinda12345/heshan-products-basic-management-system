@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { isIsoDate } from '@/app/lib/dates';
 import { PERIOD_PRESETS, describeRange, presetRange, type DateRange, type PeriodPreset } from '@/app/lib/periods';
 import { filterClass } from '@/app/components/ui/form';
@@ -13,7 +13,6 @@ function isPreset(value: string | null): value is PeriodPreset {
 // stays the same when moving between report tabs.
 export function usePeriod(defaultPreset: PeriodPreset = 'this_month') {
     const searchParams = useSearchParams();
-    const router = useRouter();
     const pathname = usePathname();
 
     const from = searchParams.get('from');
@@ -22,7 +21,8 @@ export function usePeriod(defaultPreset: PeriodPreset = 'this_month') {
     const preset = custom ? null : isPreset(searchParams.get('preset')) ? (searchParams.get('preset') as PeriodPreset) : defaultPreset;
     const range: DateRange = custom ? { from: from!, to: to! } : presetRange(preset!);
 
-    const go = (query: string) => router.replace(`${pathname}?${query}`, { scroll: false });
+    // Only the address changes (Next.js keeps useSearchParams in step), so there is no trip to the server
+    const go = (query: string) => window.history.replaceState(null, '', `${pathname}?${query}`);
 
     return {
         range,
